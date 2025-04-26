@@ -1,0 +1,67 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Flipkart Product Scraper</title>
+  <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+  <div class="container">
+    <h1>🛒 Flipkart Scraped Product</h1>
+
+    {% if product_info %}
+      <div class="product-info">
+        <h2>{{ product_info.product_name }}</h2>
+        <img src="{{ product_info.main_image }}" alt="Main Product Image" class="main-image">
+
+        <p><strong>Price:</strong> {{ product_info.price }}</p>
+        <p><strong>Rating:</strong> {{ product_info.rating }}</p>
+        <p><strong>Seller:</strong> {{ product_info.seller_name }} ({{ product_info.seller_rating }})</p>
+
+        <h3>Highlights:</h3>
+        <ul>
+          {% for highlight in product_info.highlights %}
+            <li>{{ highlight }}</li>
+          {% endfor %}
+        </ul>
+
+        <h3>Description:</h3>
+        <p>{{ product_info.description }}</p>
+
+        <h3>Specifications:</h3>
+        <ul>
+          {% for key, value in product_info.specifications.items() %}
+            <li><strong>{{ key }}:</strong> {{ value }}</li>
+          {% endfor %}
+        </ul>
+      </div>
+
+      {% if images.thumbnails %}
+        <div class="gallery">
+          <h3>Gallery:</h3>
+          {% for thumb in images.thumbnails %}
+            <img src="{{ thumb }}" class="thumbnail">
+          {% endfor %}
+        </div>
+      {% endif %}
+
+      {% if reviews %}
+        <div class="reviews">
+          <h2>📝 Reviews ({{ reviews|length }})</h2>
+          {% for review in reviews %}
+            <div class="review-card">
+              <h3>{{ review.review_title }}</h3>
+              <p><strong>Rating:</strong> {{ review.rating }}/5</p>
+              <p>{{ review.review_desc }}</p>
+              <small>By {{ review.reviewer_name }} on {{ review.review_date }}</small>
+            </div>
+          {% endfor %}
+        </div>
+      {% endif %}
+
+    {% else %}
+      <p>No data received yet. Scrape a product first! 🚀</p>
+    {% endif %}
+  </div>
+</body>
+</html>
