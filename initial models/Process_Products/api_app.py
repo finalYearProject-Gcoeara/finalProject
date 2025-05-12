@@ -27,6 +27,9 @@ MAX_RETRIES = 3
 INITIAL_BACKOFF_SECS = 3
 MAX_BACKOFF_SECS = 60
 BACKOFF_FACTOR = 2
+GENERATION_CONFIG_SENTIMENT = {"temperature": 0.1, "top_p": 1, "top_k": 1, "max_output_tokens": 50} # For short classifications
+SENTIMENT_ANALYSIS_MODEL = "gemini-1.5-flash" # Or another suitable model
+SENTIMENT_TIMEOUT = 90 # secs
 
 generation_config_structured = { "temperature": 0.6, "top_p": 1, "top_k": 1, "max_output_tokens": 300 }
 generation_config_food = { "temperature": 0.4, "top_p": 1, "top_k": 1, "max_output_tokens": 200 }
@@ -96,6 +99,114 @@ def classify_product_type(product_name, main_image_url):
     print(f"   Classification failed for {product_name}. Error: {error_msg}")
     return error_msg 
 
+def _call_gemini_api_with_retry(model_name, prompt, generation_config, safety_settings, timeout, operation_name="Generation"):
+    """
+    Helper function to call the Gemini API with retry and backoff.
+    Returns the response text or an error string.
+    """
+    last_exception = None
+    try:
+        model = genai.GenerativeModel(model_name=model_name,
+                                      generation_config=generation_config,
+                                      safety_settings=safety_settings)
+        current_backoff = INITIAL_BACKOFF_SECS
+        for attempt in range(MAX_RETRIES + 1):
+            try:
+                print(f"      {operation_name} (Attempt {attempt+1}) on {model_name} for prompt: '{str(prompt)[:150]}...'") # Increased prompt log
+                response = model.generate_content(prompt, request_options={"timeout": timeout})
+                
+                # DEBUG: Print the full response object to inspect it thoroughly
+                # print(f"      DEBUG Full Response Object (Attempt {attempt+1}): {response}")
+
+                if response.parts:
+                    text_response = response.text.strip()
+                    print(f"      SUCCESS with {model_name} (Attempt {attempt+1}), Response: '{text_response}'")
+                    return text_response
+                else:
+                    # Check for prompt feedback if available
+                    prompt_feedback_msg = ""
+                    if response.prompt_feedback and response.prompt_feedback.block_reason:
+                        prompt_feedback_msg = f" (Block Reason: {response.prompt_feedback.block_reason})"
+                    
+                    print(f"      WARN ({operation_name}, Attempt {attempt+1}): Empty/blocked response on {model_name}.{prompt_feedback_msg}")
+                    last_exception = Exception(f"{operation_name} Blocked/Empty Response from {model_name}.{prompt_feedback_msg}")
+                    # If it's blocked, retrying immediately with the same model and prompt might not help.
+                    # For single model operations (like sentiment, classification), we let retry happen.
+                    # For fallback operations, we'd break here to try the next model.
+                    # Since sentiment uses a single model strategy for now, we continue retrying.
+            
+            except (google_exceptions.ResourceExhausted, google_exceptions.DeadlineExceeded,
+                    google_exceptions.ServiceUnavailable, google_exceptions.InternalServerError) as e:
+                last_exception = e
+                print(f"      WARN ({operation_name}, Attempt {attempt+1}): API Error: {type(e).__name__}: {str(e)}. Retrying in {current_backoff:.2f}s...")
+                if attempt < MAX_RETRIES:
+                    time.sleep(current_backoff + random.uniform(0, 1))
+                    current_backoff = min(current_backoff * BACKOFF_FACTOR, MAX_BACKOFF_SECS)
+                else:
+                    print(f"      ERROR ({operation_name}): Max retries reached on {model_name} due to API errors.")
+                    break 
+            except Exception as e:
+                last_exception = e
+                print(f"      ERROR ({operation_name}, Attempt {attempt+1}): Unexpected error on {model_name}: {type(e).__name__}: {str(e)}")
+                break 
+        
+        # If loop finishes without success for this model
+        if last_exception:
+            error_msg = f"Error: {operation_name} failed on {model_name}. Last error: {type(last_exception).__name__}: {str(last_exception)}"
+            print(f"      Final error for {operation_name} on {model_name}: {error_msg}")
+            return error_msg
+        
+        # This case means MAX_RETRIES were exhausted likely due to repeated empty/blocked responses not throwing specific API errors
+        final_error_msg = f"Error: {operation_name} failed on {model_name} after all retries (likely due to repeated empty/blocked responses without explicit API errors)."
+        print(f"      Final error for {operation_name} on {model_name}: {final_error_msg}")
+        return final_error_msg
+
+    except Exception as e: # Catch errors during model instantiation
+         last_exception = e # Assign to last_exception so it's not None
+         error_msg = f"Error: Could not instantiate or use model {model_name} for {operation_name}. Error: {type(e).__name__}: {str(e)}"
+         print(f"      {error_msg}") # Print the error here
+         return error_msg
+
+
+def analyze_review_sentiment(review_text):
+    """Analyzes sentiment of a single review. Returns 'Positive', 'Negative', 'Neutral', or 'Unknown'."""
+    prompt = f"""
+    Analyze the sentiment of the following customer review.
+    Classify it as 'Positive', 'Negative', or 'Neutral'.
+    Respond with ONLY one of these three words. Do not add any other explanatory text.
+
+    Review: "{review_text}"
+
+    Sentiment:""" # Removed trailing newline in prompt, just in case
+    
+    print(f"   Analyzing sentiment for review: '{review_text[:100]}...'") # Log which review
+
+    response_text = _call_gemini_api_with_retry(
+        model_name=SENTIMENT_ANALYSIS_MODEL,
+        prompt=prompt,
+        generation_config=GENERATION_CONFIG_SENTIMENT,
+        safety_settings=safety_settings,
+        timeout=SENTIMENT_TIMEOUT,
+        operation_name="SentimentAnalysis"
+    )
+
+    print(f"   DEBUG: Raw response_text from _call_gemini_api_with_retry for sentiment: '{response_text}' for review: '{review_text[:50]}...'")
+
+    if isinstance(response_text, str) and response_text.startswith("Error:"):
+        # Error already logged by _call_gemini_api_with_retry
+        return "Unknown"
+
+    cleaned_response = response_text.strip().capitalize()
+    # Remove potential markdown like "**Positive**" -> "Positive"
+    cleaned_response = cleaned_response.replace("*", "")
+
+    if cleaned_response in ["Positive", "Negative", "Neutral"]:
+        print(f"   Sentiment classified as: {cleaned_response} for review: '{review_text[:50]}...'")
+        return cleaned_response
+    else:
+        print(f"   WARN: Unexpected sentiment response: '{response_text}'. Treating as Unknown for review: '{review_text[:50]}...'")
+        return "Unknown"
+
 
 def generate_food_details(product_name, main_image, last_three_thumbnails):
     """Generates food details. Returns details string or error string."""
@@ -156,6 +267,7 @@ def generate_food_details(product_name, main_image, last_three_thumbnails):
     error_msg = f"Error: Could not generate food details. Last error: {type(last_exception).__name__}" if last_exception else "Error: Generation failed."
     print(f"   Food detail generation failed for {product_name}. Error: {error_msg}")
     return error_msg
+
 
 def generate_structured_description(product_name, main_image, last_two_thumbnails):
     """Generates non-food description. Returns description string or error string."""
@@ -330,6 +442,39 @@ def process_product_endpoint():
     print(f"   Responding with status code {status_code}.")
     return jsonify(output_data), status_code
 
+
+
+@app.route('/analyze_sentiments', methods=['POST'])
+def analyze_sentiments_endpoint():
+    """
+    API endpoint to analyze sentiment of a list of reviews.
+    Expects JSON payload: {"reviews": ["review text 1", "review text 2", ...]}
+    Returns JSON response: {"sentiments": ["Positive", "Negative", ...]}
+    """
+    print(f"\nReceived request on /analyze_sentiments")
+    if not request.is_json:
+        print("   Error: Request body is not JSON")
+        return jsonify({"error": "Request body must be JSON"}), 400
+
+    data = request.get_json()
+    reviews_list = data.get("reviews")
+
+    if not reviews_list or not isinstance(reviews_list, list):
+        print("   Error: Missing or invalid 'reviews' list in JSON payload")
+        return jsonify({"error": "Missing or invalid 'reviews' list"}), 400
+
+    sentiments = []
+    for review_text in reviews_list:
+        if isinstance(review_text, str) and review_text.strip():
+            sentiment = analyze_review_sentiment(review_text)
+            sentiments.append(sentiment)
+        else:
+            sentiments.append("Unknown") # Handle empty or invalid review strings
+
+    print(f"   Analyzed sentiments: {sentiments}")
+    return jsonify({"sentiments": sentiments}), 200
+
+
 if __name__ == '__main__':
     print("Starting Flask development server...")
-    app.run(debug=True, host='0.0.0.0', port=5000)
+    app.run(debug=True, host='0.0.0.0', port=5001)
