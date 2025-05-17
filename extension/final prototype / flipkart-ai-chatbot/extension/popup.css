@@ -1,0 +1,202 @@
+/* popup.css */
+body {
+    font-family: 'Segoe UI', Arial, sans-serif;
+    margin: 0;
+    padding: 16px;
+    background-color: #f8fafc;
+    width: 350px;
+    max-height: 600px;
+    overflow-y: auto;
+  }
+  
+  h1 {
+    font-size: 20px;
+    margin: 0 0 16px;
+    text-align: center;
+    color: #1e293b;
+    border-bottom: 2px solid #e2e8f0;
+    padding-bottom: 12px;
+  }
+  
+  .status-bar {
+    display: flex;
+    align-items: center;
+    margin-bottom: 16px;
+    padding: 8px;
+    background: #fff;
+    border-radius: 6px;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+  }
+  
+  .status-indicator {
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    margin-right: 8px;
+    background: #22c55e;
+    transition: background-color 0.3s;
+  }
+  
+  .status-indicator.loading {
+    background: #eab308;
+    animation: pulse 1s infinite;
+  }
+  
+  .status-indicator.error {
+    background: #ef4444;
+  }
+  
+  @keyframes pulse {
+    0% { transform: scale(1); }
+    50% { transform: scale(1.2); }
+    100% { transform: scale(1); }
+  }
+  
+  .button-group {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 8px;
+    margin-bottom: 16px;
+  }
+  
+  .primary-btn, .secondary-btn, .danger-btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 10px 16px;
+    border: none;
+    border-radius: 6px;
+    font-size: 14px;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.2s;
+  }
+  
+  .primary-btn {
+    background: #2563eb;
+    color: white;
+  }
+  
+  .primary-btn:hover {
+    background: #1d4ed8;
+    transform: translateY(-1px);
+  }
+  
+  .secondary-btn {
+    background: #475569;
+    color: white;
+  }
+  
+  .danger-btn {
+    background: #dc2626;
+    color: white;
+  }
+  
+  .icon {
+    margin-right: 6px;
+    font-style: normal;
+  }
+  
+  .tabs {
+    display: flex;
+    border-bottom: 2px solid #e2e8f0;
+    margin-bottom: 16px;
+  }
+  
+  .tab-btn {
+    padding: 8px 16px;
+    border: none;
+    background: none;
+    color: #64748b;
+    cursor: pointer;
+    transition: all 0.2s;
+  }
+  
+  .tab-btn.active {
+    color: #2563eb;
+    border-bottom: 2px solid #2563eb;
+    margin-bottom: -2px;
+  }
+  
+  .tab-content {
+    display: none;
+    animation: fadeIn 0.3s;
+  }
+  
+  .tab-content.active {
+    display: block;
+  }
+  
+  @keyframes fadeIn {
+    from { opacity: 0; }
+    to { opacity: 1; }
+  }
+  
+  .image-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 8px;
+    margin-bottom: 16px;
+  }
+  
+  .image-grid img {
+    width: 100%;
+    height: 80px;
+    object-fit: cover;
+    border-radius: 4px;
+    transition: transform 0.2s;
+    cursor: pointer;
+  }
+  
+  .image-grid img:hover {
+    transform: scale(1.05);
+  }
+  
+  .reviews-list {
+    max-height: 200px;
+    overflow-y: auto;
+  }
+  
+  .review-item {
+    padding: 8px;
+    background: white;
+    border-radius: 4px;
+    margin-bottom: 8px;
+    box-shadow: 0 1px 2px rgba(0,0,0,0.1);
+  }
+  
+  .action-bar {
+    display: flex;
+    gap: 8px;
+    margin-top: 16px;
+    padding-top: 16px;
+    border-top: 2px solid #e2e8f0;
+  }
+  
+  .action-bar button {
+    flex: 1;
+  }
+  
+  footer {
+    margin-top: 16px;
+    text-align: center;
+    font-size: 12px;
+    color: #64748b;
+  }
+  
+  /* Loading animation */
+  .loading-spinner {
+    display: inline-block;
+    width: 20px;
+    height: 20px;
+    border: 2px solid #f3f3f3;
+    border-top: 2px solid #2563eb;
+    border-radius: 50%;
+    animation: spin 1s linear infinite;
+  }
+  
+  @keyframes spin {
+    0% { transform: rotate(0deg); }
+    100% { transform: rotate(360deg); }
+  }
+  

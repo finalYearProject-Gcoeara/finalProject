@@ -1,0 +1,89 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Popup Alerts</title>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      background-color: #f5f9ff;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      height: 100vh;
+      gap: 30px;
+    }
+
+    .card {
+      background: white;
+      border-radius: 12px;
+      width: 250px;
+      text-align: center;
+      box-shadow: 0 8px 16px rgba(0, 0, 0, 0.1);
+      padding: 30px 20px;
+      position: relative;
+    }
+
+    .card .icon {
+      font-size: 40px;
+      margin-bottom: 15px;
+    }
+
+    .success .icon {
+      color: #1e88e5;
+    }
+
+    .error .icon {
+      color: #e53935;
+    }
+
+    .success h2 {
+      color: #1e88e5;
+    }
+
+    .error h2 {
+      color: #e53935;
+    }
+
+    .card p {
+      font-size: 14px;
+      color: #555;
+      margin: 10px 0 20px;
+    }
+
+    .card button {
+      border: none;
+      border-radius: 5px;
+      padding: 10px 20px;
+      font-weight: bold;
+      color: white;
+      cursor: pointer;
+    }
+
+    .success button {
+      background-color: #1e88e5;
+    }
+
+    .error button {
+      background-color: #e53935;
+    }
+  </style>
+</head>
+<body>
+
+  <div class="card success">
+    <div class="icon">✔️</div>
+    <h2>Success!</h2>
+    <p>Just a few more steps left.<br>Please go on.</p>
+    <button onclick="window.open('http://localhost:5000', '_blank')">Continue</button>
+  </div>
+
+  <div class="card error">
+    <div class="icon">❌</div>
+    <h2>Oooops!</h2>
+    <p>Something went wrong,<br>try again.</p>
+    <button onclick="alert('Trying again...')">Try Again</button>
+  </div>
+
+</body>
+</html>
