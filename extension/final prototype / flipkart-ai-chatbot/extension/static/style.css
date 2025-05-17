@@ -1,0 +1,46 @@
+
+body {
+    font-family: Arial, sans-serif;
+    background: #f4f6f8;
+    margin: 0;
+    padding: 20px;
+  }
+  
+  .container {
+    max-width: 1000px;
+    margin: auto;
+    background: white;
+    padding: 20px;
+    border-radius: 8px;
+  }
+  
+  .main-image {
+    width: 200px;
+    height: auto;
+    border-radius: 10px;
+    margin-bottom: 10px;
+  }
+  
+  .thumbnail {
+    width: 100px;
+    height: auto;
+    margin: 5px;
+    border: 2px solid #ddd;
+    border-radius: 8px;
+  }
+  
+  h1, h2, h3 {
+    color: #333;
+  }
+  
+  .product-info, .reviews, .gallery {
+    margin-top: 20px;
+  }
+  
+  .review-card {
+    background: #eef2f7;
+    padding: 10px;
+    margin-bottom: 10px;
+    border-radius: 8px;
+  }
+  
