@@ -1,0 +1,132 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Flipkart Product Scraper</title>
+  <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+  <div class="container">
+    <h1>🛒 Flipkart Scraped Product</h1>
+
+    {% if product_info %}
+      <div class="product-info">
+        <h2>{{ product_info.product_name }}</h2>
+        <img src="{{ product_info.main_image }}" alt="Main Product Image" class="main-image">
+
+        <p><strong>Price:</strong> {{ product_info.price }}</p>
+        <p><strong>Rating:</strong> {{ product_info.rating }}</p>
+        <p><strong>Seller:</strong> {{ product_info.seller_name }} ({{ product_info.seller_rating }})</p>
+
+        <h3>Highlights:</h3>
+        <ul>
+          {% for highlight in product_info.highlights %}
+            <li>{{ highlight }}</li>
+          {% endfor %}
+        </ul>
+
+        <h3>Description:</h3>
+        <p>{{ product_info.description }}</p>
+
+        <h3>Specifications:</h3>
+        <ul>
+          {% for key, value in product_info.specifications.items() %}
+            <li><strong>{{ key }}:</strong> {{ value }}</li>
+          {% endfor %}
+        </ul>
+      </div>
+
+      {% if images and images.highResThumbnails %}
+        <div class="gallery">
+          <h3>Gallery:</h3>
+          <div class="thumbnails">
+            <!-- Display real scraped images -->
+            {% for thumb in images.highResThumbnails %}
+              <img src="{{ thumb }}" alt="Thumbnail" class="thumbnail">
+            {% endfor %}
+          </div>
+        </div>
+      {% else %}
+        <p>No images available for this product.</p>
+      {% endif %}
+
+      <style>
+        .gallery {
+          margin-top: 20px;
+        }
+        .thumbnails {
+          display: flex;
+          flex-wrap: wrap;
+          gap: 10px;
+        }
+        .thumbnail {
+          width: auto; /* Allow the image to maintain its natural width */
+          height: auto; /* Allow the image to maintain its natural height */
+          border: 1px solid #ccc;
+          border-radius: 5px;
+        }
+      </style>
+
+      <style>
+        .notification-card {
+          position: fixed;
+          top: 20%;
+          left: 50%;
+          transform: translate(-50%, -50%);
+          background-color: #fff;
+          border: 1px solid #ccc;
+          border-radius: 10px;
+          box-shadow: 0 4px 8px rgba(0, 0, 0, 0.2);
+          padding: 20px;
+          z-index: 1000;
+          width: 300px;
+          text-align: center;
+        }
+
+        .notification-content h3 {
+          margin: 0 0 10px;
+          font-size: 1.5em;
+          color: #333;
+        }
+
+        .notification-content p {
+          margin: 5px 0;
+          font-size: 1em;
+          color: #555;
+        }
+
+        .notification-content button {
+          margin-top: 15px;
+          padding: 10px 20px;
+          background-color: #007bff;
+          color: #fff;
+          border: none;
+          border-radius: 5px;
+          cursor: pointer;
+        }
+
+        .notification-content button:hover {
+          background-color: #0056b3;
+        }
+      </style>
+
+      {% if reviews %}
+        <div class="reviews">
+          <h2>📝 Reviews ({{ reviews|length }})</h2>
+          {% for review in reviews %}
+            <div class="review-card">
+              <h3>{{ review.review_title }}</h3>
+              <p><strong>Rating:</strong> {{ review.rating }}/5</p>
+              <p>{{ review.review_desc }}</p>
+              <small>By {{ review.reviewer_name }} on {{ review.review_date }}</small>
+            </div>
+          {% endfor %}
+        </div>
+      {% endif %}
+
+    {% else %}
+      <p>No data received yet. Scrape a product first! 🚀</p>
+    {% endif %}
+  </div>
+</body>
+</html>
