@@ -4,6 +4,9 @@
   <meta charset="UTF-8">
   <title>Flipkart Product Scraper</title>
   <link rel="stylesheet" href="/static/style.css">
+  <!-- It's generally better to include JS libraries like Chart.js in the <head> or at the end of <body> -->
+  <!-- Adding Chart.js CDN here for simplicity, or it can be placed before your custom script at the end of body -->
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 </head>
 <body>
   <div class="container">
@@ -124,9 +127,111 @@
         </div>
       {% endif %}
 
+      {# NEW: Canvas for the sentiment pie chart #}
+      {# This section will display the chart or messages based on sentiment_summary availability #}
+      {% if sentiment_summary is defined %}
+        {% if sentiment_summary.total > 0 and not sentiment_summary.error %}
+          <div class="sentiment-chart-container" style="margin-top: 30px; padding: 15px; border: 1px solid #ddd; border-radius: 8px; background-color: #f9f9f9;">
+            <h3 style="text-align: center; margin-bottom: 15px; color: #333;">Review Sentiment Analysis</h3>
+            <div style="width: 70%; max-width: 450px; margin: 0 auto;">
+              <canvas id="sentimentPieChart"></canvas>
+            </div>
+          </div>
+        {% elif sentiment_summary.error %}
+          <div class="sentiment-chart-container" style="margin-top: 30px; padding: 15px; border: 1px solid #f5c6cb; border-radius: 8px; background-color: #f8d7da; color: #721c24; text-align: center;">
+            <p><strong>Sentiment Analysis Error:</strong> {{ sentiment_summary.error }}</p>
+          </div>
+        {% elif sentiment_summary.total == 0 %}
+          <div class="sentiment-chart-container" style="margin-top: 30px; padding: 15px; border: 1px solid #ddd; border-radius: 8px; background-color: #f9f9f9; text-align: center; color: #555;">
+            <p>No review data available to display sentiment analysis.</p>
+          </div>
+        {% endif %}
+      {% endif %}
+      {# End of sentiment chart container #}
+
     {% else %}
       <p>No data received yet. Scrape a product first! 🚀</p>
     {% endif %}
   </div>
+
+  {# The provided script for sentiment chart - ensure sentiment_summary is passed from your backend #}
+  {% if sentiment_summary is defined %}
+    <script>
+        // Ensure sentiment_summary is available and no error before trying to render chart
+        const sentimentData = {{ sentiment_summary | tojson | safe }};
+        
+        if (sentimentData && sentimentData.total > 0 && !sentimentData.error) {
+            const ctx = document.getElementById('sentimentPieChart');
+            if (ctx) { // Check if the canvas element exists
+                new Chart(ctx, {
+                    type: 'pie',
+                    data: {
+                        labels: ['Positive', 'Negative', 'Neutral', 'Unknown'],
+                        datasets: [{
+                            label: 'Review Sentiments',
+                            data: [
+                                sentimentData.positive, 
+                                sentimentData.negative, 
+                                sentimentData.neutral,
+                                sentimentData.unknown 
+                            ],
+                            backgroundColor: [
+                                'rgba(75, 192, 192, 0.7)',  // Positive - Greenish
+                                'rgba(255, 99, 132, 0.7)',  // Negative - Reddish
+                                'rgba(201, 203, 207, 0.7)', // Neutral - Greyish
+                                'rgba(255, 159, 64, 0.7)'   // Unknown - Orangeish
+                            ],
+                            borderColor: [
+                                'rgba(75, 192, 192, 1)',
+                                'rgba(255, 99, 132, 1)',
+                                'rgba(201, 203, 207, 1)',
+                                'rgba(255, 159, 64, 1)'
+                            ],
+                            borderWidth: 1
+                        }]
+                    },
+                    options: {
+                        responsive: true,
+                        maintainAspectRatio: true, // Can be true or false based on desired behavior
+                        plugins: {
+                            legend: {
+                                position: 'top',
+                            },
+                            title: {
+                                display: true,
+                                text: 'Review Sentiment Distribution'
+                            },
+                            tooltip: {
+                                callbacks: {
+                                    label: function(context) {
+                                        let label = context.label || '';
+                                        if (label) {
+                                            label += ': ';
+                                        }
+                                        if (context.parsed !== null) {
+                                            const total = context.dataset.data.reduce((a, b) => a + b, 0);
+                                            const percentage = total > 0 ? (context.parsed * 100 / total).toFixed(1) + '%' : '0%';
+                                            label += context.raw + ' (' + percentage + ')';
+                                        }
+                                        return label;
+                                    }
+                                }
+                            }
+                        }
+                    }
+                });
+            } else {
+                console.log("Canvas element 'sentimentPieChart' not found. This can happen if it's conditionally not rendered.");
+            }
+        } else if (sentimentData && sentimentData.error) {
+            console.error("Sentiment analysis error:", sentimentData.error);
+            // The error is already displayed in the HTML via Jinja conditional block above.
+        } else {
+            console.log("No sentiment data to display or total reviews is zero. Chart not rendered.");
+            // This case is also handled by the Jinja conditional block above.
+        }
+    </script>
+  {% endif %}
+  
 </body>
 </html>

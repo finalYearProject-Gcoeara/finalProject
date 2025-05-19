@@ -187,15 +187,18 @@ if (!document.getElementById("flipkart-ai-chatbot")) {
   // Function to scrape images and additional product details
   async function scrapeImages() {
     const productName = getProductNameText();
-    // ...existing code...
+    const mainImgElem = document.querySelector("img.DByuf4.IZexXJ.jLEJ7H");
+    const mainImage = mainImgElem ? getBestResolutionSrc(mainImgElem) : "N/A";
+    const highResThumbnails = await extractHighResImages();
+    return {
+      images: {
+        product_name: productName,
+        main_image: mainImage,
+        thumbnails: highResThumbnails
+      }
+    };
   }
 
-  // Function to extract product information
-  function extractProductInfo() {
-    const info = {};
-    info.product_name = getProductNameText();
-    // ...existing code...
-  }
 
   // Reverting to the original `extractProductInfo` and `extractReviews` functions
 
@@ -250,35 +253,58 @@ if (!document.getElementById("flipkart-ai-chatbot")) {
   function extractReviews() {
     const allReviews = [];
 
-    const reviewContainers = document.querySelectorAll("div.col.EPCmJX");
+    // These selectors for review containers seem to align with the structure you provided
+    const reviewContainers = document.querySelectorAll("div.col.EPCmJX, div._16PBlm, div.RcXBOT.QmfTqT"); // Added the class from your snippet
     console.log(`Found ${reviewContainers.length} reviews on this page.`);
 
     reviewContainers.forEach(review => {
       try {
-        const ratingElem = review.querySelector("div.XQDdHH.Ga3i8K");
+        // Selectors for existing fields (keep these, they seem to work based on your initial code)
+        const ratingElem = review.querySelector("div.XQDdHH.Ga3i8K") || review.querySelector("div._3LWZlK._1BLPMq");
         const rating = ratingElem ? ratingElem.firstChild.textContent.trim() : null;
 
-        const reviewTitleElem = review.querySelector("p.z9E0IG");
+        const reviewTitleElem = review.querySelector("p.z9E0IG") || review.querySelector("p._2-N8zT");
         const reviewTitle = reviewTitleElem ? reviewTitleElem.innerText.trim() : null;
 
-        const reviewDescElem = review.querySelector("div.ZmyHeo");
-        let reviewDesc = reviewDescElem ? reviewDescElem.innerText.trim() : null;
-        if (reviewDesc && reviewDesc.includes("READ MORE")) {
-          reviewDesc = reviewDesc.replace("READ MORE", "").trim();
-        }
+        // --- ADD THIS SECTION TO EXTRACT THE REVIEW BODY TEXT ---
+        // Based on the HTML you provided, the review text is in a div with class "_11pzQk"
+        const reviewBodyElem = review.querySelector('div._11pzQk');
+        const reviewDesc = reviewBodyElem ? reviewBodyElem.innerText.trim() : '';
 
-        const reviewerNameElem = review.querySelector("p.AwS1CA");
+        if (!reviewDesc) {
+            console.warn("Could not find review body text (div._11pzQk) for a review.");
+            // This might happen if the review is very short or just a title?
+            // Or if Flipkart changes the class name again.
+        }
+        // --- END ADD SECTION ---
+
+        const reviewerNameElem = review.querySelector("p.AwS1CA") || review.querySelector("p._2sc7ZR._2V5EHH");
         const reviewerName = reviewerNameElem ? reviewerNameElem.innerText.trim() : null;
 
-        const reviewDateElem = review.querySelector("p._2NsDsF");
+        const reviewDateElem = review.querySelector("p._2NsDsF") || review.querySelector("p._2sc7ZR");
         const reviewDate = reviewDateElem ? reviewDateElem.innerText.trim() : null;
 
+        const reviewLocationElem = review.querySelector("span.MztJPv > span:nth-child(2)") || review.querySelector("p._2mcZGG");
+        const reviewLocation = reviewLocationElem ? reviewLocationElem.innerText.trim() : null;
+
+        // Adjusted upvote/downvote selectors slightly based on your previous code pattern
+        const upvotesElem = review.querySelector("div._6kK6mk > span.tl9VpF") || review.querySelector("div._3c3Px5 > span:first-child"); // Often count is first span
+        const upvotes = upvotesElem ? upvotesElem.innerText.trim() : "0";
+
+        const downvotesElem = review.querySelector("div._6kK6mk.aQymJL > span.tl9VpF") || review.querySelector("div._3c3Px5 > span:last-child"); // Often count is last span
+        const downvotes = downvotesElem ? downvotesElem.innerText.trim() : "0";
+
+
+        // Push the dictionary including the review_desc
         allReviews.push({
           rating,
           review_title: reviewTitle,
-          review_desc: reviewDesc,
+          review_desc: reviewDesc, // <--- Make sure this key is added here!
           reviewer_name: reviewerName,
-          review_date: reviewDate
+          review_date: reviewDate,
+          review_location: reviewLocation,
+          upvotes,
+          downvotes
         });
 
       } catch (e) {
@@ -287,6 +313,7 @@ if (!document.getElementById("flipkart-ai-chatbot")) {
     });
 
     return allReviews;
+
   }
 
   // Function to send data to Flask server
