@@ -1,4 +1,4 @@
-# app.py (the one serving index.html)
+# app.py (the one serving index.html on port 5000)
 
 import re
 from flask import Flask, request, render_template, jsonify
@@ -11,29 +11,72 @@ CORS(app)
 
 # Global variables
 product_info = {}
-reviews_data = [] # Store reviews with their sentiments
+reviews_data = []
 images = {}
-# structured_description = "" # No longer needed if gemini_api_result is used
-gemini_api_result = {} # To store product description/details
-sentiment_summary = {} # To store sentiment counts and other summary data
+gemini_api_result = {}
+sentiment_summary = {}
+table_of_contents_data = [] # MODIFIED: Ensure this is initialized globally
 
-GEMINI_API_BASE_URL = 'http://127.0.0.1:5001' # Define base URL
+GEMINI_API_BASE_URL = 'http://127.0.0.1:5001'
 GEMINI_PRODUCT_URL = f'{GEMINI_API_BASE_URL}/process_product'
 GEMINI_SENTIMENT_URL = f'{GEMINI_API_BASE_URL}/analyze_sentiments'
 
 
 def clean_structured_description(text):
-    # ... (your existing clean_structured_description function)
     if not text:
         return ""
-    # Remove '**What it is:**' section
     text = re.sub(r'\*\*What it is:\*\*', '', text, flags=re.IGNORECASE)
-    # Remove '**Potential Pros:**' and following bullet points
     text = re.sub(r'\*\*Potential Pros:\*\*.*?(?=(\*\*Potential Cons|\*\*|$))', '', text, flags=re.IGNORECASE | re.DOTALL)
-    # Remove '**Potential Cons/Considerations:**' and following bullet points
     text = re.sub(r'\*\*Potential Cons(?:/Considerations)?:\*\*.*?(?=(\*\*|$))', '', text, flags=re.IGNORECASE | re.DOTALL)
     text = text.replace('*', '').strip()
     return text
+
+# HELPER FUNCTION to parse food details (from previous correct answer)
+def parse_food_details(details_text):
+    parsed = {"ingredients": "Not specified", "fssai": "Not specified"}
+    if not details_text or not isinstance(details_text, str):
+        return parsed
+
+    ingredients_match = re.search(
+        r"Potential Ingredients(?: \(brief summary, if visible\))?:\s*(.*)",
+        details_text,
+        re.IGNORECASE
+    )
+    if ingredients_match:
+        ingredients_text = ingredients_match.group(1).strip()
+        if "not clearly visible" in ingredients_text.lower() or not ingredients_text or ingredients_text == "[]":
+            parsed["ingredients"] = "Not clearly visible"
+        else:
+            parsed["ingredients"] = ingredients_text.replace("Potential Ingredients (brief summary, if visible):", "").strip()
+
+    fssai_match = re.search(
+        r"FSSAI Number(?: \(if visible\))?:\s*(.*)",
+        details_text,
+        re.IGNORECASE
+    )
+    if fssai_match:
+        fssai_text = fssai_match.group(1).strip()
+        if "not clearly visible" in fssai_text.lower() or not fssai_text or fssai_text == "[]":
+            parsed["fssai"] = "Not clearly visible"
+        else:
+            parsed["fssai"] = fssai_text.replace("FSSAI Number (if visible):", "").strip()
+            
+    if parsed["ingredients"] == "Not specified" and "\n" in details_text:
+        lines = details_text.split('\n')
+        for line in lines:
+            if "ingredient" in line.lower():
+                ing_val = line.split(":", 1)[-1].strip()
+                if ing_val and "not clearly visible" not in ing_val.lower():
+                    parsed["ingredients"] = ing_val
+                elif "not clearly visible" in ing_val.lower():
+                    parsed["ingredients"] = "Not clearly visible"
+            elif "fssai" in line.lower():
+                fssai_val = line.split(":", 1)[-1].strip()
+                if fssai_val and "not clearly visible" not in fssai_val.lower():
+                    parsed["fssai"] = fssai_val
+                elif "not clearly visible" in fssai_val.lower():
+                    parsed["fssai"] = "Not clearly visible"
+    return parsed
 
 
 @app.route('/')
@@ -41,172 +84,233 @@ def index():
     return render_template('index.html',
                            product_info=product_info,
                            images=images,
-                           reviews_data=reviews_data, # Pass reviews with sentiments
+                           reviews_data=reviews_data,
                            gemini_data=gemini_api_result,
-                           sentiment_summary=sentiment_summary) # Pass sentiment summary
+                           sentiment_summary=sentiment_summary,
+                           table_of_contents_data=table_of_contents_data) # MODIFIED: Pass ToC data
 
 @app.route('/receive_data', methods=['POST'])
 def receive_data():
-    global product_info, reviews_data, gemini_api_result, sentiment_summary
+    # MODIFIED: Add table_of_contents_data to global
+    global product_info, reviews_data, gemini_api_result, sentiment_summary, table_of_contents_data
     data = request.get_json()
-    print("Received product/reviews data (full):", data) # Log the whole thing initially
+    print("Received product/reviews data (full):", data)
 
     product_info = data.get('product_info', {})
-    # raw_review_objects is a list of dictionaries like {'rating': ..., 'review_desc': 'text...', ...}
     raw_review_objects = data.get('reviews', [])
-    print("Received raw review objects:", raw_review_objects) # Log to see structure
+    print("Received raw review objects:", raw_review_objects)
 
     # --- Reset for new data ---
     reviews_data = []
     gemini_api_result = {}
     sentiment_summary = {"error": None}
+    table_of_contents_data = [] # MODIFIED: Reset ToC data
 
     # 1. Prepare payload for Gemini Product Processing
-    # ... (this part seems okay) ...
-    actual_thumbnails = images.get('thumbnails', [])
-    if not actual_thumbnails and product_info.get('main_image'):
-        actual_thumbnails = [product_info.get('main_image')]
+    # Using main_image from product_info for consistency in payload for Gemini
+    main_image_for_gemini = product_info.get('main_image', images.get('main_image', ''))
+    
+    # Thumbnails: Prefer images.thumbnails, fallback to product_info.main_image if images.thumbnails is empty
+    actual_thumbnails_for_gemini = images.get('thumbnails', [])
+    if not actual_thumbnails_for_gemini and main_image_for_gemini:
+        actual_thumbnails_for_gemini = [main_image_for_gemini]
+
 
     gemini_payload = {
         "images": {
             "product_name": product_info.get('product_name', ''),
-            "main_image": product_info.get('main_image', ''),
-            "thumbnails": actual_thumbnails
+            "main_image": main_image_for_gemini, # Use consistent main image
+            "thumbnails": actual_thumbnails_for_gemini # Use consistent thumbnails
         }
     }
+    print("Gemini Product Payload:", gemini_payload)
+
 
     try:
-        response = requests.post(GEMINI_PRODUCT_URL, json=gemini_payload, timeout=20) # Increased timeout
+        # Increased timeout as Gemini can take time
+        response = requests.post(GEMINI_PRODUCT_URL, json=gemini_payload, timeout=130)
         response.raise_for_status()
         gemini_api_result = response.json()
         print("Gemini Product API Response:", gemini_api_result)
 
-        if "structured_description" in gemini_api_result:
-            gemini_api_result["cleaned_description"] = clean_structured_description(gemini_api_result["structured_description"])
-        elif "food_product_details" in gemini_api_result: # Use elif
-             gemini_api_result["cleaned_description"] = gemini_api_result["food_product_details"]
+        # --- Build Table of Contents Data ---
+        product_type = gemini_api_result.get("determined_product_type", "Unknown")
+        table_of_contents_data.append({"label": "Product Type", "value": product_type})
+
+        if product_type == "Food":
+            food_details_text = gemini_api_result.get("food_product_details", "")
+            parsed_food_info = parse_food_details(food_details_text)
+            table_of_contents_data.append({"label": "Potential Ingredients", "value": parsed_food_info["ingredients"]})
+            table_of_contents_data.append({"label": "FSSAI Number", "value": parsed_food_info["fssai"]})
+            gemini_api_result["cleaned_description"] = f"Ingredients: {parsed_food_info['ingredients']}. FSSAI: {parsed_food_info['fssai']}."
+        elif "structured_description" in gemini_api_result:
+            # For Non-Food/Unknown, add the raw structured description to ToC for now
+            # You can parse this further if needed for specific fields.
+            desc_text = gemini_api_result["structured_description"]
+            table_of_contents_data.append({"label": "AI Description", "value": desc_text})
+            gemini_api_result["cleaned_description"] = clean_structured_description(desc_text)
+
+        if gemini_api_result.get("error"):
+            table_of_contents_data.append({"label": "Processing Error", "value": gemini_api_result.get("error")})
+            if "cleaned_description" not in gemini_api_result : # ensure cleaned_description exists
+                 gemini_api_result["cleaned_description"] = ""
+
 
     except requests.exceptions.RequestException as e:
         error_msg = f"Failed to get product details from Gemini server: {e}"
         print(error_msg)
-        gemini_api_result = {"error": error_msg}
+        gemini_api_result = {"error": error_msg, "cleaned_description": ""}
+        table_of_contents_data.append({"label": "API Error", "value": error_msg})
     except Exception as e:
         error_msg = f"Error processing product details: {e}"
         print(error_msg)
-        gemini_api_result = {"error": error_msg}
+        gemini_api_result = {"error": error_msg, "cleaned_description": ""}
+        table_of_contents_data.append({"label": "Processing Error", "value": error_msg})
 
 
     # 2. Analyze sentiment of reviews
     if raw_review_objects:
-        # ---- MODIFICATION START ----
-        # Extract just the review text strings for the sentiment API
-        # Assuming the review text is in a field named 'review_desc'
-        # If it's a different field, change 'review_desc' accordingly.
         review_texts_for_api = []
         for r_obj in raw_review_objects:
-            # Ensure r_obj is a dictionary and has the review description key
             if isinstance(r_obj, dict):
-                review_text = r_obj.get('review_desc') # Change 'review_desc' if your key is different
-                if review_text and isinstance(review_text, str):
+                review_text = r_obj.get('review_desc')
+                if review_text and isinstance(review_text, str) and review_text.strip(): # Check if not just whitespace
                     review_texts_for_api.append(review_text)
                 else:
-                    review_texts_for_api.append("") # Add empty string if no text, API will handle it
-                    print(f"Warning: Review object missing 'review_desc' or it's not a string: {r_obj}")
+                    # If review_desc is empty or missing, still log it but don't send for API if it's truly empty
+                    print(f"Info: Review object has empty or missing 'review_desc': {r_obj}")
+                    review_texts_for_api.append("") # Add empty string to keep counts aligned for now
             else:
-                review_texts_for_api.append("") # If r_obj is not a dict
+                review_texts_for_api.append("")
                 print(f"Warning: Encountered non-dictionary item in raw_review_objects: {r_obj}")
 
-        print(f"Extracted review texts for sentiment API: {review_texts_for_api}")
+        print(f"Extracted review texts for sentiment API (pre-filter): {review_texts_for_api}")
 
-        if not any(review_texts_for_api): # If all texts are empty
-            print("No valid review texts found to send for sentiment analysis.")
-            sentiment_summary = {"positive":0,"negative":0,"neutral":0,"unknown":0,"total":0, "error": "No review texts found"}
-            # Populate reviews_data with original objects but "Unknown" sentiment
+        # Filter out empty strings before sending to API, but keep original count for UI mapping
+        valid_review_texts_for_api = [text for text in review_texts_for_api if text.strip()]
+
+        if not valid_review_texts_for_api: # If all texts are empty or whitespace after filtering
+            print("No valid (non-empty) review texts found to send for sentiment analysis.")
+            sentiment_summary = {"positive":0,"negative":0,"neutral":0,"unknown":len(raw_review_objects),"total":len(raw_review_objects), "error": "No review texts found"}
             reviews_data = []
-            for r_obj in raw_review_objects:
-                # Add the original review text (or an empty string) and mark sentiment as Unknown
-                text_to_display = r_obj.get('review_desc', 'Review text not available') if isinstance(r_obj, dict) else 'Invalid review object'
+            for i, r_obj in enumerate(raw_review_objects):
+                text_to_display = review_texts_for_api[i] if review_texts_for_api[i].strip() else "Review text not provided"
+                if not isinstance(r_obj, dict): # if original object was not a dict
+                    text_to_display = "Invalid review object"
                 reviews_data.append({"text": text_to_display, "sentiment": "Unknown"})
-
         else:
             try:
-                sentiment_payload = {"reviews": review_texts_for_api} # Send only the text strings
-                s_response = requests.post(GEMINI_SENTIMENT_URL, json=sentiment_payload, timeout=45) # Increased timeout
+                print(f"Sending {len(valid_review_texts_for_api)} valid review texts for sentiment analysis.")
+                sentiment_payload = {"reviews": valid_review_texts_for_api}
+                s_response = requests.post(GEMINI_SENTIMENT_URL, json=sentiment_payload, timeout=100) # Increased timeout
                 s_response.raise_for_status()
-                sentiment_results = s_response.json().get("sentiments", [])
+                sentiment_results_api = s_response.json().get("sentiments", []) # These are for valid_review_texts_for_api
 
-                # The sentiment_results should now correspond to review_texts_for_api
-                # We need to map these back to the original raw_review_objects for full display data
-                if len(sentiment_results) == len(raw_review_objects): # Match with original object count
+                # Map API results back to the original raw_review_objects structure
+                # This requires careful indexing if we skipped empty reviews
+                full_sentiment_results = []
+                api_result_idx = 0
+                for original_text in review_texts_for_api: # Iterate through the list that matches raw_review_objects
+                    if original_text.strip(): # If this review was sent to the API
+                        if api_result_idx < len(sentiment_results_api):
+                            full_sentiment_results.append(sentiment_results_api[api_result_idx])
+                            api_result_idx += 1
+                        else:
+                            full_sentiment_results.append("Error") # Should not happen if API behaved
+                            print("Error: API returned fewer sentiments than expected.")
+                    else: # This review was empty and not sent
+                        full_sentiment_results.append("Unknown")
+                
+                # Now full_sentiment_results should have the same length as raw_review_objects
+                if len(full_sentiment_results) == len(raw_review_objects):
                     temp_reviews_data = []
                     for i, r_obj in enumerate(raw_review_objects):
-                        # Get the actual review text for display (handle if r_obj is not a dict)
-                        text_to_display = r_obj.get('review_desc', 'Review text not available') if isinstance(r_obj, dict) else 'Invalid review object'
+                        text_to_display = review_texts_for_api[i] if review_texts_for_api[i].strip() else "Review text not provided"
+                        if not isinstance(r_obj, dict):
+                             text_to_display = "Invalid review object"
                         temp_reviews_data.append({
-                            "text": text_to_display, # This is for display in index.html {{ review.text }}
-                            "sentiment": sentiment_results[i]
-                            # You can add other original fields from r_obj here if index.html needs them
-                            # e.g., "rating": r_obj.get('rating') if isinstance(r_obj, dict) else None
+                            "text": text_to_display,
+                            "sentiment": full_sentiment_results[i]
                         })
                     reviews_data = temp_reviews_data
                     
-                    sentiment_counts = Counter(sentiment_results)
+                    sentiment_counts = Counter(full_sentiment_results)
                     sentiment_summary.update({
                         "positive": sentiment_counts.get("Positive", 0),
                         "negative": sentiment_counts.get("Negative", 0),
                         "neutral": sentiment_counts.get("Neutral", 0),
-                        "unknown": sentiment_counts.get("Unknown", 0) + sentiment_counts.get("Error", 0), # Combine unknown and error from API
-                        "total": len(review_texts_for_api) # Total is based on texts sent to API
+                        "unknown": sentiment_counts.get("Unknown", 0) + sentiment_counts.get("Error", 0),
+                        "total": len(raw_review_objects) # Total is based on all original reviews
                     })
                     print("Sentiment Analysis Summary:", sentiment_summary)
                 else:
-                    error_msg = "Mismatch in number of reviews processed and sentiments received."
+                    # This case should be less likely with the new mapping logic
+                    error_msg = "Critical error: Mismatch in number of reviews and mapped sentiments."
                     print(error_msg)
                     sentiment_summary["error"] = error_msg
-                    # Fallback: mark all original reviews with Error sentiment
-                    reviews_data = []
-                    for r_obj in raw_review_objects:
-                        text_to_display = r_obj.get('review_desc', 'Review text not available') if isinstance(r_obj, dict) else 'Invalid review object'
+                    reviews_data = [] # Fallback
+                    for r_obj_idx, r_obj_val in enumerate(raw_review_objects):
+                        text_to_display = review_texts_for_api[r_obj_idx] if review_texts_for_api[r_obj_idx].strip() else "Review text not provided"
+                        if not isinstance(r_obj_val, dict):
+                             text_to_display = "Invalid review object"
                         reviews_data.append({"text": text_to_display, "sentiment": "Error"})
-
 
             except requests.exceptions.RequestException as e:
                 error_msg = f"Failed to get sentiments from Gemini server: {e}"
                 print(error_msg)
                 sentiment_summary["error"] = error_msg
                 reviews_data = []
-                for r_obj in raw_review_objects: # Fallback
-                    text_to_display = r_obj.get('review_desc', 'Review text not available') if isinstance(r_obj, dict) else 'Invalid review object'
+                for r_obj_idx, r_obj_val in enumerate(raw_review_objects):
+                    text_to_display = review_texts_for_api[r_obj_idx] if review_texts_for_api[r_obj_idx].strip() else "Review text not provided"
+                    if not isinstance(r_obj_val, dict):
+                         text_to_display = "Invalid review object"
                     reviews_data.append({"text": text_to_display, "sentiment": "Error"})
             except Exception as e:
                 error_msg = f"Error processing sentiments: {e}"
                 print(error_msg)
                 sentiment_summary["error"] = error_msg
                 reviews_data = []
-                for r_obj in raw_review_objects: # Fallback
-                    text_to_display = r_obj.get('review_desc', 'Review text not available') if isinstance(r_obj, dict) else 'Invalid review object'
+                for r_obj_idx, r_obj_val in enumerate(raw_review_objects):
+                    text_to_display = review_texts_for_api[r_obj_idx] if review_texts_for_api[r_obj_idx].strip() else "Review text not provided"
+                    if not isinstance(r_obj_val, dict):
+                         text_to_display = "Invalid review object"
                     reviews_data.append({"text": text_to_display, "sentiment": "Error"})
-        # ---- MODIFICATION END ----
-    else: # No raw_review_objects
+    else:
         reviews_data = []
         sentiment_summary = {"positive":0,"negative":0,"neutral":0,"unknown":0,"total":0}
 
+    print("Final table_of_contents_data:", table_of_contents_data)
     return jsonify({
         "message": "Data received and processed!",
         "product_status": "ok" if "error" not in gemini_api_result else "error",
         "sentiment_status": "ok" if "error" not in sentiment_summary and raw_review_objects else "no_reviews_or_error"
     })
 
-# ... (rest of your app.py) ...
 
 @app.route('/receive_images', methods=['POST'])
 def receive_images():
     global images
     data = request.get_json()
-    print("Received images data:", data)
-    images = data.get('images', {}) # Assuming 'images' key contains a dict like {"main_image": "url", "thumbnails": ["url1", ...]}
+    # MODIFICATION: Handle nested 'images' key if present
+    if 'images' in data and isinstance(data['images'], dict) and 'images' in data['images']:
+        print("Received images data (nested structure):", data)
+        images_data_actual = data['images'].get('images', {})
+    elif 'images' in data and isinstance(data['images'], dict): # If it's already the correct structure
+        print("Received images data (direct structure):", data)
+        images_data_actual = data.get('images', {})
+    else:
+        print("Received images data (unexpected structure or missing 'images' key):", data)
+        images_data_actual = {}
+
+    # Ensure `images` global variable gets the final correct structure
+    if 'main_image' in images_data_actual or 'thumbnails' in images_data_actual:
+        images = images_data_actual
+    else: # Fallback if parsing fails, try to get it from data directly
+        images = data.get('images', {}) if isinstance(data.get('images'), dict) else {}
+
+    print("Processed images global:", images)
     return jsonify({"message": "Images received successfully!"})
 
 
 if __name__ == '__main__':
-    app.run(debug=True, port=5000) # Default port is 5000
+    app.run(debug=True, port=5000)
