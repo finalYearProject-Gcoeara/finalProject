@@ -1,0 +1,684 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Flipkart Product Scraper & Analysis</title>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;500;700&display=swap" rel="stylesheet">
+
+  <style>
+    /* ... (ALL YOUR EXISTING CSS STYLES - no changes needed here based on the error) ... */
+    :root {
+        --flipkart-blue: #2874f0;
+        --flipkart-orange: #ff9f00;
+        --text-primary: #212121;
+        --text-secondary: #5f6368;
+        --background-light: #f1f3f6;
+        --background-white: #ffffff;
+        --border-color: #e0e0e0;
+        --success-green: #28a745;
+        --error-red: #dc3545;
+        --neutral-grey: #6c757d;
+        --unknown-yellow: #ffc107;
+        --card-shadow: 0 4px 12px rgba(0,0,0,0.08);
+        --card-hover-shadow: 0 6px 16px rgba(0,0,0,0.12);
+    }
+
+    body {
+        font-family: 'Roboto', Arial, sans-serif;
+        line-height: 1.6;
+        margin: 0;
+        padding: 20px;
+        background-color: var(--background-light);
+        color: var(--text-primary);
+        display: flex;
+        justify-content: center;
+        min-height: 100vh;
+    }
+
+    .container {
+        width: 100%;
+        max-width: 960px;
+        background-color: var(--background-white);
+        padding: 20px 30px;
+        border-radius: 12px;
+        box-shadow: var(--card-shadow);
+        margin: 20px;
+    }
+
+    h1, h2, h3, h4 {
+        color: var(--text-primary);
+        font-weight: 500;
+    }
+
+    h1 { /* Page Title */
+        text-align: center;
+        margin-bottom: 30px;
+        font-size: 2.2em;
+        font-weight: 700;
+        color: var(--flipkart-blue);
+    }
+
+    /* Card Structure for Sections */
+    .section-card {
+        background-color: var(--background-white);
+        padding: 20px;
+        border-radius: 8px;
+        box-shadow: 0 2px 6px rgba(0,0,0,0.05);
+        margin-bottom: 25px;
+        border: 1px solid var(--border-color);
+    }
+    .section-card h3 { /* Section Titles */
+        margin-top: 0;
+        padding-bottom: 10px;
+        border-bottom: 1px solid var(--border-color);
+        font-size: 1.4em;
+        color: var(--flipkart-blue);
+    }
+
+    /* Product Info Specifics */
+    .product-info h2 { /* Product Name Title */
+        font-size: 1.8em;
+        font-weight: 700;
+        margin-bottom: 15px;
+        text-align: center;
+        color: var(--text-primary);
+    }
+
+    .product-info img.main-image {
+        max-width: 100%;
+        height: auto;
+        border-radius: 8px;
+        margin: 0 auto 20px auto;
+        display: block;
+        max-height: 380px;
+        object-fit: contain;
+        border: 1px solid var(--border-color);
+        padding: 5px;
+    }
+    
+    .product-details p, .product-details li {
+        margin-bottom: 10px;
+        font-size: 1em;
+        color: var(--text-secondary);
+    }
+    .product-details p strong, .product-details li strong {
+        color: var(--text-primary);
+        font-weight: 500;
+    }
+    .product-details ul {
+        padding-left: 20px;
+        list-style: disc;
+    }
+    .product-description p {
+        font-size: 0.95em;
+        line-height: 1.7;
+        color: var(--text-secondary);
+        word-break: break-word;
+    }
+
+    .redirect-button-container {
+        text-align: center;
+        margin: 25px 0;
+    }
+    .redirect-button {
+      display: inline-block;
+      padding: 12px 25px;
+      font-size: 1.05em;
+      font-weight: 500;
+      color: var(--background-white);
+      background-color: var(--flipkart-orange);
+      border: none;
+      border-radius: 6px;
+      text-align: center;
+      text-decoration: none;
+      cursor: pointer;
+      transition: background-color 0.3s ease, transform 0.2s ease, box-shadow 0.3s ease;
+      box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+    }
+    .redirect-button:hover {
+      background-color: #e68a00; /* Darker Orange */
+      transform: translateY(-2px);
+      box-shadow: 0 4px 8px rgba(0,0,0,0.15);
+    }
+    .redirect-button:active {
+      transform: translateY(0);
+      box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+    }
+    .animated-text { /* For the button text animation */
+        display: inline-block;
+        animation: fadeInOut 1.5s ease-in-out infinite;
+    }
+    @keyframes fadeInOut {
+        0%, 100% { opacity: 1; transform: translateY(0); }
+        50% { opacity: 0.6; transform: translateY(-3px); } /* Adjusted animation slightly */
+    }
+
+    /* Table of Contents / Product Quick View Table */
+    .toc-table {
+       width: 100%;
+       border-collapse: collapse;
+       margin-top: 10px;
+    }
+    .toc-table td {
+       padding: 10px 5px; /* Increased padding */
+       border-bottom: 1px solid #f0f0f0; /* Lighter border within table */
+       vertical-align: top;
+    }
+    .toc-table tr:last-child td {
+       border-bottom: none;
+    }
+    .toc-label {
+       width: 35%; /* Adjust as needed */
+       color: var(--text-primary);
+       font-weight: 500;
+    }
+    .toc-value {
+       color: var(--text-secondary);
+       word-break: break-word;
+    }
+
+
+    /* Gallery Styles */
+    .gallery .thumbnails {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 12px;
+      justify-content: flex-start;
+    }
+    .thumbnail {
+      width: 110px;
+      height: 110px;
+      object-fit: contain;
+      border: 1px solid var(--border-color);
+      border-radius: 6px;
+      background-color: #fdfdfd;
+      padding: 6px;
+      transition: transform 0.2s ease, box-shadow 0.2s ease;
+      cursor: pointer;
+    }
+    .thumbnail:hover {
+        transform: scale(1.08);
+        box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+    }
+
+    /* Reviews Section */
+    .reviews-section h3 { /* Shared style with .section-card h3 is already applied */
+    }
+    .review-card {
+       background-color: #fdfdfd;
+       border: 1px solid var(--border-color);
+       border-radius: 6px;
+       padding: 15px;
+       margin-bottom: 15px;
+       box-shadow: 0 1px 3px rgba(0,0,0,0.04);
+    }
+    .review-card h4 { /* Review title */
+       margin-top: 0;
+       margin-bottom: 8px;
+       font-size: 1.15em;
+       font-weight: 500;
+       color: var(--text-primary);
+       display: flex;
+       justify-content: space-between;
+       align-items: center;
+    }
+    .review-text {
+       font-size: 0.9em;
+       line-height: 1.6;
+       color: var(--text-secondary);
+       margin-bottom: 10px;
+       word-break: break-word;
+    }
+    .review-meta {
+       font-size: 0.85em;
+       color: var(--text-secondary);
+       margin-bottom: 5px;
+    }
+    .review-meta small {
+       font-style: italic;
+    }
+    .sentiment-badge {
+       font-size: 0.8em;
+       padding: 4px 10px; /* Slightly more padding */
+       border-radius: 12px; /* More rounded */
+       font-weight: 500;
+       text-transform: capitalize;
+       color: var(--background-white);
+       margin-left: 10px; /* Space from title */
+    }
+    .sentiment-positive { background-color: var(--success-green); }
+    .sentiment-negative { background-color: var(--error-red); }
+    .sentiment-neutral { background-color: var(--neutral-grey); }
+    .sentiment-unknown,
+    .sentiment-unknown-no-text, /* From app.py mapping */
+    .sentiment-error-api-mismatch,
+    .sentiment-error-mapping,
+    .sentiment-error-api-failure,
+    .sentiment-error-processing {
+       background-color: var(--unknown-yellow);
+       color: var(--text-primary); /* Better contrast for yellow */
+    }
+    /* Fallback for a generic "Error" sentiment if not caught by specific ones */
+    .sentiment-error { background-color: var(--error-red); }
+
+
+    /* Sentiment Chart and Messages */
+    .sentiment-chart-container {
+        padding: 25px;
+        border: 1px solid var(--border-color);
+        border-radius: 8px;
+        background-color: var(--background-white);
+        box-shadow: 0 2px 6px rgba(0,0,0,0.05);
+        margin-bottom: 25px; /* Consistent margin */
+    }
+    .sentiment-chart-container h3 { /* Chart Title (shared with .section-card h3) */
+        text-align: center;
+        margin-bottom: 20px;
+    }
+    .sentiment-chart-container p { /* For error/no data messages within chart area */
+        text-align: center;
+        font-size: 0.95em;
+        color: var(--text-secondary);
+        padding: 10px;
+    }
+
+    /* Generic Error and No Data Messages */
+    .message-box {
+        margin: 30px 0;
+        padding: 18px 22px;
+        border-radius: 8px;
+        text-align: center;
+        font-size: 1.05em;
+        font-weight: 500;
+    }
+    .error-message { /* Specific class for error messages */
+        background-color: #f8d7da;
+        color: #721c24;
+        border: 1px solid #f5c6cb;
+    }
+    .no-data-message { /* Main page "no data yet" */
+        color: var(--text-secondary);
+        font-size: 1.2em;
+        margin-top: 60px;
+    }
+
+    /* Notification card styles */
+    .notification-card {
+      position: fixed;
+      top: 80px;
+      left: 50%;
+      transform: translateX(-50%);
+      background-color: var(--background-white);
+      border: 1px solid var(--border-color);
+      border-radius: 10px;
+      box-shadow: 0 8px 24px rgba(0, 0, 0, 0.15);
+      padding: 25px;
+      z-index: 1000;
+      width: 320px;
+      text-align: center;
+    }
+    .notification-content h3 { margin: 0 0 12px; font-size: 1.6em; color: var(--flipkart-blue); }
+    .notification-content p { margin: 8px 0; font-size: 1em; color: var(--text-primary); }
+    .notification-content button {
+        margin-top: 20px;
+        padding: 10px 22px;
+        background-color: var(--flipkart-blue);
+        color: var(--background-white);
+        border: none;
+        border-radius: 6px;
+        cursor: pointer;
+        font-weight: 500;
+        transition: background-color 0.2s ease;
+    }
+    .notification-content button:hover { background-color: #1e63d0; }
+    
+    .product-aspects-container {
+        padding: 25px;
+        border: 1px solid var(--border-color);
+        border-radius: 8px;
+        background-color: var(--background-white);
+        box-shadow: 0 2px 6px rgba(0,0,0,0.05);
+        margin-bottom: 25px;
+    }
+    .product-aspects-container h3 {
+        text-align: center;
+        margin-bottom: 20px;
+        font-size: 1.4em;
+        color: var(--flipkart-blue);
+        padding-bottom: 10px;
+        border-bottom: 1px solid var(--border-color);
+    }
+    .aspect-keywords ul {
+        list-style: none;
+        padding: 0;
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+        margin-top: 10px;
+    }
+    .aspect-keywords li {
+        background-color: #e9ecef;
+        padding: 5px 10px;
+        border-radius: 4px;
+        font-size: 0.85em;
+        color: var(--text-secondary);
+    }
+    .positive-keywords li { background-color: #d4edda; color: #155724; }
+    .negative-keywords li { background-color: #f8d7da; color: #721c24; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>🛒 Flipkart Product Analysis</h1>
+
+    {% if product_info and product_info.product_name %}
+      <!-- ALL PRODUCT RELATED CONTENT GOES INSIDE THIS IF BLOCK -->
+
+      <div class="product-info section-card">
+        <h2>{{ product_info.product_name }}</h2>
+        {% if product_info.main_image and product_info.main_image != "N/A" %}
+          <img src="{{ product_info.main_image }}" alt="Main Product Image" class="main-image">
+        {% endif %}
+        <div class="product-details">
+            <p><strong>Price:</strong> {{ product_info.price | default('N/A') }}</p>
+            <p><strong>Rating:</strong> {{ product_info.rating | default('N/A') }}</p>
+            <p><strong>Seller:</strong> {{ product_info.seller_name | default('N/A') }} ({{ product_info.seller_rating | default('N/A') }})</p>
+        </div>
+        <div class="redirect-button-container">
+            <a href="{{ url_for('landing_page') }}" class="redirect-button" target="_blank">
+                <span class="animated-text">DEEP VISION HOME</span>
+            </a>
+        </div>
+      </div>
+
+      {% if table_of_contents_data %}
+        <div class="section-card toc-section">
+          <h3>Product Quick View</h3>
+          <table class="toc-table">
+            <tbody>
+              {% for item in table_of_contents_data %}
+                <tr>
+                  <td class="toc-label"><strong>{{ item.label }}:</strong></td>
+                  <td class="toc-value">{{ item.value }}</td>
+                </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      {% endif %}
+
+      {% if product_info.highlights %}
+        <div class="highlights-section section-card">
+            <h3>Highlights:</h3>
+            <div class="product-details">
+                <ul>
+                    {% for highlight in product_info.highlights %}
+                    <li>{{ highlight }}</li>
+                    {% endfor %}
+                </ul>
+            </div>
+        </div>
+      {% endif %}
+
+      <div class="description-section section-card">
+          <h3>Description:</h3>
+          <div class="product-description">
+            {% if gemini_data and gemini_data.cleaned_description %}
+              <p>{{ gemini_data.cleaned_description | safe }}</p>
+            {% elif product_info.description and product_info.description != "N/A" %}
+              <p>{{ product_info.description }}</p>
+            {% else %}
+              <p>No detailed description available.</p>
+            {% endif %}
+          </div>
+      </div>
+
+      {% if product_info.specifications %}
+        <div class="specifications-section section-card">
+            <h3>Specifications:</h3>
+            <div class="product-details">
+                <ul>
+                {% for key, value in product_info.specifications.items() %}
+                    <li><strong>{{ key }}:</strong> {{ value }}</li>
+                {% endfor %}
+                </ul>
+            </div>
+        </div>
+      {% endif %}
+      
+      {% if images and images.thumbnails and images.thumbnails|length > 0 %}
+        <div class="gallery section-card">
+          <h3>Product Gallery:</h3>
+          <div class="thumbnails">
+            {% for thumb in images.thumbnails %}
+              <img src="{{ thumb }}" alt="Thumbnail" class="thumbnail">
+            {% endfor %}
+          </div>
+        </div>
+      {% elif product_info %}
+        <div class="section-card">
+            <p style="text-align: center; margin-top: 5px; color: var(--text-secondary);">No detailed images available for this product.</p>
+        </div>
+      {% endif %}
+
+      {% if sentiment_summary is defined and product_info %}
+        <div class="sentiment-chart-container">
+          {% if sentiment_summary.total > 0 and not sentiment_summary.error %}
+            <h3>Review Sentiment Analysis</h3>
+            <div style="width: 90%; max-width: 450px; margin: 0 auto; height: 350px;">
+              <canvas id="sentimentPieChart"></canvas>
+            </div>
+          {% elif sentiment_summary.error %}
+            <h3>Review Sentiment Analysis</h3>
+            <p class="message-box error-message" style="margin-top: 10px;"><strong>Error:</strong> {{ sentiment_summary.error }}</p>
+          {% elif sentiment_summary.total == 0 %}
+             <h3>Review Sentiment Analysis</h3>
+             <p style="color: var(--text-secondary);">No review sentiment data available for analysis.</p>
+          {% endif %}
+        </div>
+      {% endif %}
+
+      <!-- Product Aspects Bar Graph Section - MOVED INSIDE THE MAIN IF -->
+      {% if product_aspects_data and not product_aspects_data.error and (product_aspects_data.positive_score > 0 or product_aspects_data.negative_score > 0) %}
+        <div class="product-aspects-container section-card">
+          <h3>Product Aspects Overview</h3>
+          <div style="width: 90%; max-width: 500px; margin: 0 auto; height: 300px;">
+            <canvas id="productAspectsBarGraph"></canvas>
+          </div>
+          {% if product_aspects_data.positive_keywords %}
+          <div class="aspect-keywords positive-keywords" style="margin-top: 20px;">
+              <p><strong>Key Positives:</strong></p>
+              <ul>
+                  {% for keyword in product_aspects_data.positive_keywords %}
+                      <li>{{ keyword }}</li>
+                  {% endfor %}
+              </ul>
+          </div>
+          {% endif %}
+          {% if product_aspects_data.negative_keywords %}
+          <div class="aspect-keywords negative-keywords" style="margin-top: 10px;">
+              <p><strong>Key Negatives/Concerns:</strong></p>
+              <ul>
+                  {% for keyword in product_aspects_data.negative_keywords %}
+                      <li>{{ keyword }}</li>
+                  {% endfor %}
+              </ul>
+          </div>
+          {% endif %}
+        </div>
+      {% elif product_aspects_data and product_aspects_data.error %}
+        <div class="product-aspects-container section-card">
+          <h3>Product Aspects Overview</h3>
+          <p class="message-box error-message" style="margin-top: 10px;">
+              <strong>Error analyzing product aspects:</strong> {{ product_aspects_data.error }}
+          </p>
+        </div>
+      {% elif product_info %}
+         <div class="product-aspects-container section-card">
+          <h3>Product Aspects Overview</h3>
+          <p style="text-align: center; color: var(--text-secondary);">Product aspects analysis not available.</p>
+        </div>
+      {% endif %}
+      <!-- End of Product Aspects Bar Graph Section -->
+
+    {% else %} {# This 'else' is for the main 'if product_info and product_info.product_name' #}
+      <p class="no-data-message message-box">No data received yet. Please use the extension to scrape a Flipkart product first! 🚀</p>
+    {% endif %}
+    <!-- End of main 'if product_info' block -->
+
+    {% if reviews_data %}
+    <div class="reviews-section section-card">
+      <h3>Customer Reviews & Sentiments ({{ reviews_data|length }})</h3>
+      {% for review in reviews_data %}
+        <div class="review-card">
+          <h4>
+            {{ review.review_title | default('Review') }}
+            {% if review.sentiment %}
+              <span class="sentiment-badge sentiment-{{ review.sentiment | lower | replace(' ', '-') | replace('(', '') | replace(')', '') | default('unknown') }}">
+                {{ review.sentiment | default('N/A') }}
+              </span>
+            {% endif %}
+          </h4>
+          {% if review.rating %}
+            <p class="review-meta"><strong>Rating:</strong> {{ review.rating }}/5</p>
+          {% endif %}
+          <p class="review-text">{{ review.review_desc | default('No description provided.') }}</p>
+          {% if review.reviewer_name %}
+            <p class="review-meta">
+              <small>
+                By: {{ review.reviewer_name | default('Anonymous') }}
+                {% if review.review_date and review.review_date != review.reviewer_name %}
+                  on {{ review.review_date }}
+                {% endif %}
+              </small>
+            </p>
+          {% endif %}
+        </div>
+      {% endfor %}
+    </div>
+  {% elif product_info %} 
+    <div class="section-card">
+      <p style="text-align: center; color: var(--text-secondary);">No customer reviews available for this product.</p>
+    </div>
+  {% endif %}
+
+  </div> <!-- Closing .container -->
+
+
+
+  {% if sentiment_summary is defined and product_info and sentiment_summary.total > 0 and not sentiment_summary.error %}
+    <script>
+        // This script block is intentionally duplicated inside the main 'if product_info'
+        // to ensure it only runs when product_info is present and the chart canvas exists.
+        const sentimentData = {{ sentiment_summary | tojson | safe }};
+        const ctx = document.getElementById('sentimentPieChart');
+        if (ctx && sentimentData) { // Check ctx again here
+            try {
+                new Chart(ctx, {
+                    type: 'pie',
+                    data: { /* ... Pie chart data ... */ 
+                        labels: ['Positive', 'Negative', 'Neutral', 'Unknown'],
+                        datasets: [{
+                            label: 'Review Sentiments',
+                            data: [
+                                sentimentData.positive, 
+                                sentimentData.negative, 
+                                sentimentData.neutral,
+                                sentimentData.unknown 
+                            ],
+                            backgroundColor: [
+                                'rgba(40, 167, 69, 0.75)',  // Positive (Green)
+                                'rgba(220, 53, 69, 0.75)',  // Negative (Red)
+                                'rgba(108, 117, 125, 0.75)', // Neutral (Grey)
+                                'rgba(255, 193, 7, 0.75)'   // Unknown (Yellow)
+                            ],
+                            borderColor: [
+                                'rgba(40, 167, 69, 1)',
+                                'rgba(220, 53, 69, 1)',
+                                'rgba(108, 117, 125, 1)',
+                                'rgba(255, 193, 7, 1)'
+                            ],
+                            borderWidth: 1.5
+                        }]
+                    },
+                    options: { /* ... Pie chart options ... */ 
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        plugins: {
+                            legend: {
+                                position: 'bottom',
+                                labels: { padding: 20, font: { size: 13 } }
+                            },
+                            title: { display: false },
+                            tooltip: {
+                                backgroundColor: 'rgba(0,0,0,0.75)',
+                                titleFont: { size: 14 }, bodyFont: { size: 13 },
+                                padding: 10, cornerRadius: 4,
+                                callbacks: {
+                                    label: function(context) {
+                                        let label = context.label || '';
+                                        if (label) { label += ': '; }
+                                        if (context.parsed !== null) {
+                                            const total = context.dataset.data.reduce((a, b) => a + b, 0);
+                                            const percentage = total > 0 ? (context.parsed * 100 / total).toFixed(1) + '%' : '0%';
+                                            label += context.raw + ' (' + percentage + ')';
+                                        }
+                                        return label;
+                                    }
+                                }
+                            }
+                        }
+                    }
+                });
+            } catch (e) { console.error("Chart.js error:", e); if(ctx && ctx.parentElement) {ctx.parentElement.innerHTML = "<p class='message-box error-message' style='margin-top: 10px;'>Error rendering sentiment chart.</p>";} }
+        }
+    </script>
+  {% endif %}
+
+  {% if product_aspects_data and not product_aspects_data.error and (product_aspects_data.positive_score > 0 or product_aspects_data.negative_score > 0) %}
+    <script>
+        // This script block is also duplicated inside the main 'if product_info' (implicitly, as product_aspects_data depends on it)
+        const aspectsData = {{ product_aspects_data | tojson | safe }};
+        const aspectsCtx = document.getElementById('productAspectsBarGraph');
+        if (aspectsCtx && aspectsData) { // Check aspectsCtx again here
+            try {
+                new Chart(aspectsCtx, {
+                    type: 'bar',
+                    data: { /* ... Bar graph data ... */ 
+                        labels: ['Positive Aspects', 'Negative Aspects'],
+                        datasets: [{
+                            label: 'Aspect Score (out of 10)',
+                            data: [aspectsData.positive_score, aspectsData.negative_score],
+                            backgroundColor: [ 'rgba(40, 167, 69, 0.75)', 'rgba(220, 53, 69, 0.75)' ],
+                            borderColor: [ 'rgba(40, 167, 69, 1)', 'rgba(220, 53, 69, 1)' ],
+                            borderWidth: 1
+                        }]
+                    },
+                    options: { /* ... Bar graph options ... */ 
+                        responsive: true, maintainAspectRatio: false,
+                        scales: { y: { beginAtZero: true, max: 10, title: { display: true, text: 'Score' } } },
+                        plugins: {
+                            legend: { display: false },
+                            title: { display: false },
+                            tooltip: {
+                                callbacks: {
+                                    label: function(context) {
+                                        let label = context.dataset.label || '';
+                                        if (label) { label += ': '; }
+                                        if (context.parsed.y !== null) { label += context.parsed.y; }
+                                        return label;
+                                    }
+                                }
+                            }
+                        }
+                    }
+                });
+            } catch(e) { console.error("Aspects Bar Graph error:", e); if(aspectsCtx && aspectsCtx.parentElement){aspectsCtx.parentElement.innerHTML = "<p class='message-box error-message' style='margin-top:10px;'>Error rendering aspects graph.</p>";} }
+        }
+    </script>
+  {% endif %}
+
+  
+</body>
+</html>

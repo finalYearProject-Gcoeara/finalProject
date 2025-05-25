@@ -1,3 +1,4 @@
+# backend_gemini_server.py (running on port 5001)
 from flask import Flask, request, jsonify
 import google.generativeai as genai
 from google.api_core import exceptions as google_exceptions
@@ -27,22 +28,32 @@ MAX_RETRIES = 3
 INITIAL_BACKOFF_SECS = 3
 MAX_BACKOFF_SECS = 60
 BACKOFF_FACTOR = 2
-GENERATION_CONFIG_SENTIMENT = {"temperature": 0.1, "top_p": 1, "top_k": 1, "max_output_tokens": 50} # For short classifications
-SENTIMENT_ANALYSIS_MODEL = "gemini-1.5-flash" # Or another suitable model
+GENERATION_CONFIG_SENTIMENT = {"temperature": 0.1, "top_p": 1, "top_k": 1, "max_output_tokens": 50}
+SENTIMENT_ANALYSIS_MODEL = "gemini-1.5-flash"
 SENTIMENT_TIMEOUT = 90 # secs
 
 generation_config_structured = { "temperature": 0.6, "top_p": 1, "top_k": 1, "max_output_tokens": 300 }
 generation_config_food = { "temperature": 0.4, "top_p": 1, "top_k": 1, "max_output_tokens": 200 }
 generation_config_classify = { "temperature": 0.2, "top_p": 1, "top_k": 1, "max_output_tokens": 10 }
+# NEW: Config for product aspects analysis
+generation_config_aspects = { "temperature": 0.5, "top_p": 1, "top_k": 1, "max_output_tokens": 250, "response_mime_type": "application/json"}
+
+
 safety_settings = [
     {"category": "HARM_CATEGORY_HARASSMENT", "threshold": "BLOCK_MEDIUM_AND_ABOVE"},
     {"category": "HARM_CATEGORY_HATE_SPEECH", "threshold": "BLOCK_MEDIUM_AND_ABOVE"},
     {"category": "HARM_CATEGORY_SEXUALLY_EXPLICIT", "threshold": "BLOCK_MEDIUM_AND_ABOVE"},
     {"category": "HARM_CATEGORY_DANGEROUS_CONTENT", "threshold": "BLOCK_MEDIUM_AND_ABOVE"},
 ]
-CLASSIFICATION_TIMEOUT = 60  # sec
-GENERATION_TIMEOUT = 120 # sec
+CLASSIFICATION_TIMEOUT = 60
+GENERATION_TIMEOUT = 120
+# NEW: Timeout for aspects analysis
+ASPECTS_ANALYSIS_TIMEOUT = 120
+ASPECTS_ANALYSIS_MODEL = "gemini-1.5-flash" # Using flash for speed, can be 1.0-pro for more detail
 
+
+# --- Helper Functions (classify_product_type, _call_gemini_api_with_retry, analyze_review_sentiment, generate_food_details, generate_structured_description) ---
+# ... (Keep all existing helper functions as they are) ...
 def classify_product_type(product_name, main_image_url):
     """Calls Gemini to classify product type. Returns classification or error string."""
     prompt = f"""
@@ -112,28 +123,34 @@ def _call_gemini_api_with_retry(model_name, prompt, generation_config, safety_se
         current_backoff = INITIAL_BACKOFF_SECS
         for attempt in range(MAX_RETRIES + 1):
             try:
-                print(f"      {operation_name} (Attempt {attempt+1}) on {model_name} for prompt: '{str(prompt)[:150]}...'") # Increased prompt log
+                print(f"      {operation_name} (Attempt {attempt+1}) on {model_name} for prompt: '{str(prompt)[:150]}...'")
                 response = model.generate_content(prompt, request_options={"timeout": timeout})
                 
-                # DEBUG: Print the full response object to inspect it thoroughly
-                # print(f"      DEBUG Full Response Object (Attempt {attempt+1}): {response}")
-
                 if response.parts:
                     text_response = response.text.strip()
+                    # If JSON is expected, try to parse it to validate early
+                    if generation_config.get("response_mime_type") == "application/json":
+                        try:
+                            json.loads(text_response) # Validate JSON
+                        except json.JSONDecodeError as je:
+                            print(f"      WARN ({operation_name}, Attempt {attempt+1}): Invalid JSON response from {model_name}: {je}. Response: '{text_response}'")
+                            last_exception = je # Treat as a failure for this attempt
+                            # Potentially retry or break depending on strategy. For now, let retry logic handle it.
+                            if attempt < MAX_RETRIES:
+                                time.sleep(current_backoff + random.uniform(0, 1))
+                                current_backoff = min(current_backoff * BACKOFF_FACTOR, MAX_BACKOFF_SECS)
+                                continue # Skip to next retry
+                            else: # Max retries reached for JSON error
+                                break 
                     print(f"      SUCCESS with {model_name} (Attempt {attempt+1}), Response: '{text_response}'")
                     return text_response
                 else:
-                    # Check for prompt feedback if available
                     prompt_feedback_msg = ""
                     if response.prompt_feedback and response.prompt_feedback.block_reason:
                         prompt_feedback_msg = f" (Block Reason: {response.prompt_feedback.block_reason})"
                     
                     print(f"      WARN ({operation_name}, Attempt {attempt+1}): Empty/blocked response on {model_name}.{prompt_feedback_msg}")
                     last_exception = Exception(f"{operation_name} Blocked/Empty Response from {model_name}.{prompt_feedback_msg}")
-                    # If it's blocked, retrying immediately with the same model and prompt might not help.
-                    # For single model operations (like sentiment, classification), we let retry happen.
-                    # For fallback operations, we'd break here to try the next model.
-                    # Since sentiment uses a single model strategy for now, we continue retrying.
             
             except (google_exceptions.ResourceExhausted, google_exceptions.DeadlineExceeded,
                     google_exceptions.ServiceUnavailable, google_exceptions.InternalServerError) as e:
@@ -150,21 +167,19 @@ def _call_gemini_api_with_retry(model_name, prompt, generation_config, safety_se
                 print(f"      ERROR ({operation_name}, Attempt {attempt+1}): Unexpected error on {model_name}: {type(e).__name__}: {str(e)}")
                 break 
         
-        # If loop finishes without success for this model
         if last_exception:
             error_msg = f"Error: {operation_name} failed on {model_name}. Last error: {type(last_exception).__name__}: {str(last_exception)}"
             print(f"      Final error for {operation_name} on {model_name}: {error_msg}")
             return error_msg
         
-        # This case means MAX_RETRIES were exhausted likely due to repeated empty/blocked responses not throwing specific API errors
         final_error_msg = f"Error: {operation_name} failed on {model_name} after all retries (likely due to repeated empty/blocked responses without explicit API errors)."
         print(f"      Final error for {operation_name} on {model_name}: {final_error_msg}")
         return final_error_msg
 
-    except Exception as e: # Catch errors during model instantiation
-         last_exception = e # Assign to last_exception so it's not None
+    except Exception as e: 
+         last_exception = e 
          error_msg = f"Error: Could not instantiate or use model {model_name} for {operation_name}. Error: {type(e).__name__}: {str(e)}"
-         print(f"      {error_msg}") # Print the error here
+         print(f"      {error_msg}")
          return error_msg
 
 
@@ -177,9 +192,9 @@ def analyze_review_sentiment(review_text):
 
     Review: "{review_text}"
 
-    Sentiment:""" # Removed trailing newline in prompt, just in case
+    Sentiment:""" 
     
-    print(f"   Analyzing sentiment for review: '{review_text[:100]}...'") # Log which review
+    print(f"   Analyzing sentiment for review: '{review_text[:100]}...'")
 
     response_text = _call_gemini_api_with_retry(
         model_name=SENTIMENT_ANALYSIS_MODEL,
@@ -193,12 +208,9 @@ def analyze_review_sentiment(review_text):
     print(f"   DEBUG: Raw response_text from _call_gemini_api_with_retry for sentiment: '{response_text}' for review: '{review_text[:50]}...'")
 
     if isinstance(response_text, str) and response_text.startswith("Error:"):
-        # Error already logged by _call_gemini_api_with_retry
         return "Unknown"
 
-    cleaned_response = response_text.strip().capitalize()
-    # Remove potential markdown like "**Positive**" -> "Positive"
-    cleaned_response = cleaned_response.replace("*", "")
+    cleaned_response = response_text.strip().capitalize().replace("*", "")
 
     if cleaned_response in ["Positive", "Negative", "Neutral"]:
         print(f"   Sentiment classified as: {cleaned_response} for review: '{review_text[:50]}...'")
@@ -224,7 +236,6 @@ def generate_food_details(product_name, main_image, last_three_thumbnails):
     """
     print(f"   Generating food details for: {product_name}")
     last_exception = None
-    # --- Add Retry & Fallback Logic Here (identical to previous script) ---
     for model_name in GENERATION_MODELS_FALLBACK:
         print(f"      Trying model: {model_name}")
         try:
@@ -238,7 +249,7 @@ def generate_food_details(product_name, main_image, last_three_thumbnails):
                     if response.parts:
                         details = response.text.strip()
                         print(f"      SUCCESS with {model_name} (Attempt {attempt+1})")
-                        return details # Success!
+                        return details 
                     else: 
                          print(f"      WARN (Food Gen, Attempt {attempt+1}): Empty/blocked response.")
                          last_exception = Exception("Food Gen Blocked/Empty Response")
@@ -263,7 +274,6 @@ def generate_food_details(product_name, main_image, last_three_thumbnails):
              last_exception = e
              print(f"      ERROR: Could not use generation model {model_name}: {e}")
             
-
     error_msg = f"Error: Could not generate food details. Last error: {type(last_exception).__name__}" if last_exception else "Error: Generation failed."
     print(f"   Food detail generation failed for {product_name}. Error: {error_msg}")
     return error_msg
@@ -323,7 +333,7 @@ def generate_structured_description(product_name, main_image, last_two_thumbnail
                      print(f"      ERROR (Struct Gen, Attempt {attempt+1}): Unexpected error: {e}")
                      break 
 
-        except Exception as e: # Catch errors during model instantiation
+        except Exception as e: 
              last_exception = e
              print(f"      ERROR: Could not use generation model {model_name}: {e}")
 
@@ -331,35 +341,105 @@ def generate_structured_description(product_name, main_image, last_two_thumbnail
     print(f"   Structured description generation failed for {product_name}. Error: {error_msg}")
     return error_msg
 
+# NEW: Function to analyze product aspects for bar graph
+def analyze_product_aspects(product_name, highlights, description, specifications):
+    """
+    Analyzes product information to identify positive and negative aspects and assign scores.
+    Returns a dictionary with scores and keywords, or an error dictionary.
+    """
+    highlights_str = "\n".join(highlights) if highlights else "Not available"
+    # Truncate description and specifications if too long to avoid overly long prompts
+    description_str = (description[:500] + '...') if description and len(description) > 500 else (description or "Not available")
+    
+    # Create a string from specifications dictionary
+    specs_list = []
+    if isinstance(specifications, dict):
+        for key, value in list(specifications.items())[:10]: # Limit to first 10 specs
+            specs_list.append(f"{key}: {value}")
+    specs_str = "\n".join(specs_list) if specs_list else "Not available"
+
+    prompt = f"""
+    Analyze the following product information to identify its key positive and negative aspects.
+    Provide a score from 0 to 10 for the overall positive content (0 being not positive, 10 being extremely positive) 
+    and a score from 0 to 10 for the overall negative content (0 being not negative, 10 being extremely negative).
+    Also, list up to 5 keywords or short phrases summarizing the main positive aspects and up to 5 for negative aspects.
+
+    Product Name: {product_name}
+    Highlights:
+    {highlights_str}
+    Description:
+    {description_str}
+    Specifications:
+    {specs_str}
+
+    Your response MUST be a valid JSON object with the following exact structure:
+    {{
+      "positive_score": <integer_score_0_to_10>,
+      "negative_score": <integer_score_0_to_10>,
+      "positive_keywords": ["keyword1", "keyword2", ...],
+      "negative_keywords": ["keyword1", "keyword2", ...]
+    }}
+    Ensure keywords are concise. If no clear negative aspects are found, "negative_keywords" can be an empty list and "negative_score" should be low (0-2).
+    Similarly for positive aspects. Focus on inherent product qualities, features, or common perceptions.
+    """
+    print(f"   Analyzing product aspects for: {product_name}")
+
+    response_text = _call_gemini_api_with_retry(
+        model_name=ASPECTS_ANALYSIS_MODEL,
+        prompt=prompt,
+        generation_config=generation_config_aspects, # Uses response_mime_type: application/json
+        safety_settings=safety_settings,
+        timeout=ASPECTS_ANALYSIS_TIMEOUT,
+        operation_name="ProductAspectsAnalysis"
+    )
+
+    if isinstance(response_text, str) and response_text.startswith("Error:"):
+        print(f"   Error during product aspects analysis: {response_text}")
+        return {"error": response_text, "positive_score": 0, "negative_score": 0, "positive_keywords": [], "negative_keywords": []}
+
+    try:
+        # The response should already be JSON because of response_mime_type
+        # However, if the model fails to produce valid JSON despite the instruction, this will catch it.
+        # Remove potential markdown code block delimiters if present
+        cleaned_json_text = re.sub(r"```json\s*|\s*```", "", response_text, flags=re.DOTALL).strip()
+        aspects_data = json.loads(cleaned_json_text)
+        
+        # Validate structure
+        if not all(k in aspects_data for k in ["positive_score", "negative_score", "positive_keywords", "negative_keywords"]):
+            raise ValueError("Missing required keys in aspects_data JSON.")
+        if not isinstance(aspects_data["positive_score"], int) or not isinstance(aspects_data["negative_score"], int):
+            raise ValueError("Scores must be integers.")
+        if not isinstance(aspects_data["positive_keywords"], list) or not isinstance(aspects_data["negative_keywords"], list):
+            raise ValueError("Keywords must be lists.")
+            
+        print(f"   Product aspects analysis successful: {aspects_data}")
+        return aspects_data
+    except json.JSONDecodeError as e:
+        print(f"   Error decoding JSON from product aspects analysis: {e}. Response was: {response_text}")
+        return {"error": "Invalid JSON response from aspects analysis.", "positive_score": 0, "negative_score": 0, "positive_keywords": [], "negative_keywords": []}
+    except ValueError as e:
+        print(f"   Error validating JSON structure from product aspects analysis: {e}. Response was: {response_text}")
+        return {"error": f"Invalid JSON structure: {e}", "positive_score": 0, "negative_score": 0, "positive_keywords": [], "negative_keywords": []}
+
 
 # --- Flask App Initialization ---
 app = Flask(__name__)
 
 @app.route('/process_product', methods=['POST'])
 def process_product_endpoint():
-    """
-    API endpoint to process product JSON data.
-    Expects JSON payload in the request body matching the input structure.
-    Returns JSON response with classification and description/details.
-    """
     print(f"\nReceived request on /process_product")
-
     if not request.is_json:
         print("   Error: Request body is not JSON")
         return jsonify({"error": "Request body must be JSON"}), 400
-
     data = request.get_json()
-    print(f"   Received JSON data: {str(data)[:200]}...") # Log snippet
-
+    print(f"   Received JSON data: {str(data)[:200]}...")
     try:
         images_data = data.get("images")
         if not isinstance(images_data, dict):
             raise ValueError("'images' key missing or not a dictionary")
-
         product_name = images_data.get("product_name")
         main_image = images_data.get("main_image")
-        thumbnails = images_data.get("thumbnails", []) # Default to empty list
-
+        thumbnails = images_data.get("thumbnails", [])
         if not product_name or not isinstance(product_name, str):
             raise ValueError("Missing or invalid 'product_name'")
         if not main_image or not isinstance(main_image, str):
@@ -367,7 +447,6 @@ def process_product_endpoint():
         if not isinstance(thumbnails, list):
             print("   Warning: 'thumbnails' is not a list, treating as empty.")
             thumbnails = []
-
     except (KeyError, ValueError, TypeError) as e:
         print(f"   Error: Invalid input JSON structure - {e}")
         return jsonify({"error": f"Invalid input JSON structure: {e}"}), 400
@@ -375,52 +454,34 @@ def process_product_endpoint():
         print(f"   Error: Unexpected error during input processing - {e}")
         return jsonify({"error": f"Unexpected error processing input: {e}"}), 500
 
-
     product_type = classify_product_type(product_name, main_image)
-
     if isinstance(product_type, str) and product_type.startswith("Error:"):
         print(f"   Classification failed, returning error.")
-        # Return 500 for API errors, maybe 503 Service Unavailable if appropriate
-        return jsonify({
-            "product_name": product_name,
-            "main_image": main_image,
-            "error": product_type 
-        }), 500
-
+        return jsonify({"product_name": product_name, "main_image": main_image, "error": product_type }), 500
 
     generated_content = None
     generation_error = None
     used_thumbnails_count = 0
-
     try:
         if product_type == "Food":
             print("   Product classified as FOOD. Generating food details.")
             last_three_thumbnails = thumbnails[-3:]
             used_thumbnails_count = len(last_three_thumbnails)
-            generated_content = generate_food_details(
-                product_name, main_image, last_three_thumbnails
-            )
+            generated_content = generate_food_details(product_name, main_image, last_three_thumbnails)
         else:
-            if product_type == "Unknown":
-                 print("   Product type UNKNOWN, generating standard description.")
-            else:
-                 print(f"   Product classified as NON-FOOD. Generating structured description.")
+            if product_type == "Unknown": print("   Product type UNKNOWN, generating standard description.")
+            else: print(f"   Product classified as NON-FOOD. Generating structured description.")
             last_two_thumbnails = thumbnails[-2:]
             used_thumbnails_count = len(last_two_thumbnails)
-            generated_content = generate_structured_description(
-                product_name, main_image, last_two_thumbnails
-            )
-
+            generated_content = generate_structured_description(product_name, main_image, last_two_thumbnails)
         if isinstance(generated_content, str) and generated_content.startswith("Error:"):
             generation_error = generated_content
-            generated_content = None # Clear content if it's an error message
+            generated_content = None
             print(f"   Generation failed: {generation_error}")
-
     except Exception as e:
         print(f"   Error: Unexpected error during generation step - {e}")
         generation_error = f"Unexpected error during generation: {e}"
         generated_content = None
-
 
     output_data = {
         "product_name": product_name,
@@ -428,7 +489,6 @@ def process_product_endpoint():
         "determined_product_type": product_type,
         "used_thumbnails_count": used_thumbnails_count
     }
-
     if generation_error:
         output_data["error"] = generation_error
         status_code = 500 
@@ -438,41 +498,59 @@ def process_product_endpoint():
     else: 
         output_data["structured_description"] = generated_content
         status_code = 200
-
     print(f"   Responding with status code {status_code}.")
     return jsonify(output_data), status_code
 
 
-
 @app.route('/analyze_sentiments', methods=['POST'])
 def analyze_sentiments_endpoint():
-    """
-    API endpoint to analyze sentiment of a list of reviews.
-    Expects JSON payload: {"reviews": ["review text 1", "review text 2", ...]}
-    Returns JSON response: {"sentiments": ["Positive", "Negative", ...]}
-    """
     print(f"\nReceived request on /analyze_sentiments")
     if not request.is_json:
         print("   Error: Request body is not JSON")
         return jsonify({"error": "Request body must be JSON"}), 400
-
     data = request.get_json()
     reviews_list = data.get("reviews")
-
     if not reviews_list or not isinstance(reviews_list, list):
         print("   Error: Missing or invalid 'reviews' list in JSON payload")
         return jsonify({"error": "Missing or invalid 'reviews' list"}), 400
-
     sentiments = []
     for review_text in reviews_list:
         if isinstance(review_text, str) and review_text.strip():
             sentiment = analyze_review_sentiment(review_text)
             sentiments.append(sentiment)
         else:
-            sentiments.append("Unknown") # Handle empty or invalid review strings
-
+            sentiments.append("Unknown")
     print(f"   Analyzed sentiments: {sentiments}")
     return jsonify({"sentiments": sentiments}), 200
+
+# NEW: Endpoint for product aspects analysis
+@app.route('/analyze_product_aspects', methods=['POST'])
+def analyze_product_aspects_endpoint():
+    """
+    API endpoint to analyze product aspects for bar graph.
+    Expects JSON: {"product_name": "...", "highlights": [...], "description": "...", "specifications": {...}}
+    """
+    print(f"\nReceived request on /analyze_product_aspects")
+    if not request.is_json:
+        print("   Error: Request body is not JSON")
+        return jsonify({"error": "Request body must be JSON"}), 400
+
+    data = request.get_json()
+    product_name = data.get("product_name")
+    highlights = data.get("highlights", [])
+    description = data.get("description", "")
+    specifications = data.get("specifications", {}) # Scraped specifications
+
+    if not product_name:
+        print("   Error: Missing 'product_name' in request for aspects analysis.")
+        return jsonify({"error": "Missing 'product_name'"}), 400
+
+    aspect_analysis_result = analyze_product_aspects(product_name, highlights, description, specifications)
+
+    if "error" in aspect_analysis_result and aspect_analysis_result.get("positive_score") == 0 : # Check if it's a significant error
+        return jsonify(aspect_analysis_result), 500
+    
+    return jsonify(aspect_analysis_result), 200
 
 
 if __name__ == '__main__':
