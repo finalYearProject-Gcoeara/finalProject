@@ -1,4 +1,0 @@
-Open Chrome and go to chrome://extensions/.
-Enable "Developer mode" (toggle in the top right corner).
-Click on "Load unpacked" and select your extension folder.
-Navigate to a Flipkart product page, click the extension icon, and click the "Scrape Product Info" button.

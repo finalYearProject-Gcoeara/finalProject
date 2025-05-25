@@ -253,53 +253,78 @@ if (!document.getElementById("flipkart-ai-chatbot")) {
   function extractReviews() {
     const allReviews = [];
 
-    // These selectors for review containers seem to align with the structure you provided
-    const reviewContainers = document.querySelectorAll("div.col.EPCmJX, div._16PBlm, div.RcXBOT.QmfTqT"); // Added the class from your snippet
+    const reviewContainers = document.querySelectorAll("div.col.EPCmJX, div._16PBlm, div.RcXBOT.QmfTqT");
     console.log(`Found ${reviewContainers.length} reviews on this page.`);
 
     reviewContainers.forEach(review => {
       try {
-        // Selectors for existing fields (keep these, they seem to work based on your initial code)
         const ratingElem = review.querySelector("div.XQDdHH.Ga3i8K") || review.querySelector("div._3LWZlK._1BLPMq");
         const rating = ratingElem ? ratingElem.firstChild.textContent.trim() : null;
 
         const reviewTitleElem = review.querySelector("p.z9E0IG") || review.querySelector("p._2-N8zT");
         const reviewTitle = reviewTitleElem ? reviewTitleElem.innerText.trim() : null;
 
-        // --- ADD THIS SECTION TO EXTRACT THE REVIEW BODY TEXT ---
-        // Based on the HTML you provided, the review text is in a div with class "_11pzQk"
-        const reviewBodyElem = review.querySelector('div._11pzQk');
-        const reviewDesc = reviewBodyElem ? reviewBodyElem.innerText.trim() : '';
+        // --- MODIFIED SECTION TO EXTRACT THE REVIEW BODY TEXT ---
+        // Try the common 'ZmyHeo' selector first, then fallback to others if needed
+        const reviewBodyElem = review.querySelector("div.ZmyHeo") || review.querySelector('div._11pzQk'); // Try ZmyHeo first
+        let reviewDesc = '';
 
-        if (!reviewDesc) {
-            console.warn("Could not find review body text (div._11pzQk) for a review.");
-            // This might happen if the review is very short or just a title?
-            // Or if Flipkart changes the class name again.
+        if (reviewBodyElem) {
+          // The actual text might be in a nested div inside ZmyHeo
+          // Or ZmyHeo itself might contain the text.
+          // Let's get all text content and clean it up.
+          let fullText = reviewBodyElem.innerText;
+
+          // Remove "READ MORE" if it exists (often at the end)
+          // Using a regex to match "READ MORE" potentially with leading/trailing spaces at the end of the string
+          fullText = fullText.replace(/\s*READ MORE\s*$/, "").trim();
+          reviewDesc = fullText;
         }
-        // --- END ADD SECTION ---
+
+        if (!reviewDesc && reviewBodyElem) { // If still no desc but element was found
+             console.warn("Review body element found, but innerText is empty or only 'READ MORE'. Selector:", reviewBodyElem.className);
+        } else if (!reviewBodyElem) {
+             console.warn("Could not find review body text element using selectors 'div.ZmyHeo' or 'div._11pzQk' for a review.");
+        }
+        // --- END MODIFIED SECTION ---
 
         const reviewerNameElem = review.querySelector("p.AwS1CA") || review.querySelector("p._2sc7ZR._2V5EHH");
         const reviewerName = reviewerNameElem ? reviewerNameElem.innerText.trim() : null;
 
+        // Potential issue: review_date might be picking up reviewer_name again if selectors are too similar
+        // For the data you provided, review_date is the same as reviewer_name.
+        // Let's assume the original selectors were intentional for now, but this is a common pitfall.
         const reviewDateElem = review.querySelector("p._2NsDsF") || review.querySelector("p._2sc7ZR");
-        const reviewDate = reviewDateElem ? reviewDateElem.innerText.trim() : null;
+        let reviewDate = reviewDateElem ? reviewDateElem.innerText.trim() : null;
+
+        // If reviewDate is the same as reviewerName, it's likely the date selector grabbed the name.
+        // This is a heuristic and might need adjustment based on actual page structure.
+        if (reviewDate === reviewerName && review.querySelectorAll("p._2sc7ZR").length > 1) {
+            const dateCanditates = review.querySelectorAll("p._2sc7ZR");
+            if (dateCanditates.length > 1) { // If there are multiple p._2sc7ZR, the second one is often date
+                reviewDate = dateCanditates[1].innerText.trim();
+            } else {
+                // If only one, and it's the name, then actual date might be missing or different selector needed
+                reviewDate = "Date N/A";
+            }
+        } else if (!reviewDate && reviewerName) {
+             reviewDate = "Date N/A"; // If no date found
+        }
+
 
         const reviewLocationElem = review.querySelector("span.MztJPv > span:nth-child(2)") || review.querySelector("p._2mcZGG");
         const reviewLocation = reviewLocationElem ? reviewLocationElem.innerText.trim() : null;
 
-        // Adjusted upvote/downvote selectors slightly based on your previous code pattern
-        const upvotesElem = review.querySelector("div._6kK6mk > span.tl9VpF") || review.querySelector("div._3c3Px5 > span:first-child"); // Often count is first span
+        const upvotesElem = review.querySelector("div._6kK6mk > span.tl9VpF") || review.querySelector("div._3c3Px5 > span:first-child");
         const upvotes = upvotesElem ? upvotesElem.innerText.trim() : "0";
 
-        const downvotesElem = review.querySelector("div._6kK6mk.aQymJL > span.tl9VpF") || review.querySelector("div._3c3Px5 > span:last-child"); // Often count is last span
+        const downvotesElem = review.querySelector("div._6kK6mk.aQymJL > span.tl9VpF") || review.querySelector("div._3c3Px5 > span:last-child");
         const downvotes = downvotesElem ? downvotesElem.innerText.trim() : "0";
 
-
-        // Push the dictionary including the review_desc
         allReviews.push({
           rating,
           review_title: reviewTitle,
-          review_desc: reviewDesc, // <--- Make sure this key is added here!
+          review_desc: reviewDesc, // Ensure this is populated
           reviewer_name: reviewerName,
           review_date: reviewDate,
           review_location: reviewLocation,
@@ -311,10 +336,11 @@ if (!document.getElementById("flipkart-ai-chatbot")) {
         console.error("Error extracting one review:", e);
       }
     });
-
+    console.log("Extracted reviews objects:", allReviews); // Add this to see what's being collected
     return allReviews;
-
   }
+
+  
 
   // Function to send data to Flask server
   async function sendDataToFlask(productData, reviewsData) {
