@@ -4,7 +4,8 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
   <title>DeepVision</title>
-  <link rel="stylesheet" href="css/styles.css" />
+  <!-- Corrected CSS path using url_for -->
+  <link rel="stylesheet" href="{{ url_for('static', filename='Landing_page_assets/css/styles.css') }}" />
 </head>
 <body>
   <div id="your-element-selector">
@@ -13,10 +14,7 @@
     <header class="top-nav">
       <div class="nav-left">
         <a href="#">Home</a>
-        <a href="#">Dashboard</a>
-      </div>
-      <div class="nav-right">
-        <!-- <button class="glass-button">Sign In</button> -->
+        <a href="{{ url_for('dashboard') }}">Dashboard</a>
       </div>
     </header>
 
@@ -40,6 +38,7 @@
   <!-- Scripts -->
   <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r134/three.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/vanta@latest/dist/vanta.net.min.js"></script>
-  <script src="js/script.js"></script>
+  <!-- Corrected JS path using url_for -->
+  <script src="{{ url_for('static', filename='Landing_page_assets/js/script.js') }}"></script>
 </body>
 </html>
