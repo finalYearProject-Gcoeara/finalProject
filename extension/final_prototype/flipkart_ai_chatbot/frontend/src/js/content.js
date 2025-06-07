@@ -282,9 +282,9 @@ if (!document.getElementById("flipkart-ai-chatbot")) {
         }
 
         if (!reviewDesc && reviewBodyElem) { // If still no desc but element was found
-             console.warn("Review body element found, but innerText is empty or only 'READ MORE'. Selector:", reviewBodyElem.className);
+          console.warn("Review body element found, but innerText is empty or only 'READ MORE'. Selector:", reviewBodyElem.className);
         } else if (!reviewBodyElem) {
-             console.warn("Could not find review body text element using selectors 'div.ZmyHeo' or 'div._11pzQk' for a review.");
+          console.warn("Could not find review body text element using selectors 'div.ZmyHeo' or 'div._11pzQk' for a review.");
         }
         // --- END MODIFIED SECTION ---
 
@@ -300,15 +300,15 @@ if (!document.getElementById("flipkart-ai-chatbot")) {
         // If reviewDate is the same as reviewerName, it's likely the date selector grabbed the name.
         // This is a heuristic and might need adjustment based on actual page structure.
         if (reviewDate === reviewerName && review.querySelectorAll("p._2sc7ZR").length > 1) {
-            const dateCanditates = review.querySelectorAll("p._2sc7ZR");
-            if (dateCanditates.length > 1) { // If there are multiple p._2sc7ZR, the second one is often date
-                reviewDate = dateCanditates[1].innerText.trim();
-            } else {
-                // If only one, and it's the name, then actual date might be missing or different selector needed
-                reviewDate = "Date N/A";
-            }
+          const dateCanditates = review.querySelectorAll("p._2sc7ZR");
+          if (dateCanditates.length > 1) { // If there are multiple p._2sc7ZR, the second one is often date
+            reviewDate = dateCanditates[1].innerText.trim();
+          } else {
+            // If only one, and it's the name, then actual date might be missing or different selector needed
+            reviewDate = "Date N/A";
+          }
         } else if (!reviewDate && reviewerName) {
-             reviewDate = "Date N/A"; // If no date found
+          reviewDate = "Date N/A"; // If no date found
         }
 
 
@@ -340,7 +340,7 @@ if (!document.getElementById("flipkart-ai-chatbot")) {
     return allReviews;
   }
 
-  
+
 
   // Function to send data to Flask server
   async function sendDataToFlask(productData, reviewsData) {
@@ -421,11 +421,11 @@ if (!document.getElementById("flipkart-ai-chatbot")) {
     const closeButton = alertCard.querySelector("#closeButton");
 
     continueButton.addEventListener("click", () => {
-        window.open("http://127.0.0.1:5000/", "_blank", "width=800,height=600");
+      window.open("http://127.0.0.1:5173/", "_blank", "width=800,height=600");
     });
 
     closeButton.addEventListener("click", () => {
-        alertCard.remove();
+      alertCard.remove();
     });
   }
 
